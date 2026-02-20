@@ -1,0 +1,542 @@
+# Data Schema Documentation
+
+Excel structure requirements for source grades file and output diploma format.
+
+---
+
+## Source Excel File
+
+### File Properties
+
+```
+Name: 2025-2026 диплом бағалары.xlsx  (or similar)
+Format: .xlsx (Excel 2007+)
+Location: Set in config/settings.py → SOURCE_FILE
+Encoding: UTF-8 (critical for Cyrillic)
+```
+
+### Sheet Names
+
+**IT Program (3F groups)**:
+- `3F-1` - 1st semester students
+- `3F-2` - 2nd semester students
+- `3F-3` - 3rd semester students
+- `3F-4` - 4th semester students
+
+**Accounting Program (3D groups)** (future):
+- `3D-1`, `3D-2`, `3D-3`
+
+### Row Structure
+
+```
+Row 1:    Subject Names (Bilingual: KZ\nRU)
+Row 2:    Empty (spacing)
+Row 3:    Hours and Credits (format: "72с-3к")
+Row 4:    Empty (spacing)
+Row 5+:   Student Data Rows
+```
+
+**Example**:
+```
+┌─────┬──────────────────────┬────────────────────────┬──────┐
+│ No. │ Full Name            │ КМ 1 Тест\nTest Module │ ...  │
+├─────┼──────────────────────┼────────────────────────┼──────┤
+│     │                      │                        │      │
+├─────┼──────────────────────┼────────────────────────┼──────┤
+│     │                      │ 72с-3к                 │ ...  │
+├─────┼──────────────────────┼────────────────────────┼──────┤
+│     │                      │                        │      │
+├─────┼──────────────────────┼────────────────────────┼──────┤
+│ 1   │ Иванов Иван          │ 85                     │ ...  │
+├─────┼──────────────────────┼────────────────────────┼──────┤
+│ 2   │ Петров Петр          │ 90                     │ ...  │
+│ ... │                      │                        │      │
+└─────┴──────────────────────┴────────────────────────┴──────┘
+
+Row 1: Subject names
+Row 3: Hours and credits for each subject
+Row 5: First student data
+Row 6: Second student data
+```
+
+### Column Structure
+
+| Index | Name             | Format                | Example        | Notes                          |
+|-------|------------------|----------------------|----------------|--------------------------------|
+| 0     | No.              | Integer              | 1, 2, 3        | Sequential student number      |
+| 1     | Full Name        | Text                 | "Иванов Иван"  | Last Name Space First Name     |
+| 2+    | Subject Grades   | Percentage (0-100)   | 85, 92, 78     | Numeric scores only            |
+
+**Column Stride**: Each subject takes 1 column, subjects are sequential from column 2 onward.
+
+**Example Column Mapping**:
+```
+Col 0: No.           [1, 2, 3, ...]
+Col 1: Full Name     ["Иванов Иван", "Петров Петр", ...]
+Col 2: Subject 1     [85, 90, 78, ...]
+Col 3: Subject 2     [92, 88, 95, ...]
+Col 4: Subject 3     [70, 75, 80, ...]
+...
+Col N: Subject N-1   [...]
+```
+
+### Subject Names (Row 1)
+
+**Format**: Bilingual - Kazakh\nRussian (newline separated)
+
+**Example**:
+```
+"Қазақ тілі\nКазахский язык"
+"Ағылшын тілі\nАнглийский язык"
+"Информатика\nInformatics"
+```
+
+**Processing**:
+```python
+from core.utils import clean_subject_name
+
+kz_name, ru_name = clean_subject_name("Қазақ тілі\nКазахский язык")
+# kz_name = "Қазақ тілі"
+# ru_name = "Казахский язык"
+```
+
+### Hours and Credits (Row 3)
+
+**Format**: "{hours}с-{credits}к"
+
+**Examples**:
+```
+"72с-3к"    → hours=72, credits=3
+"108с-4.5к" → hours=108, credits=4.5
+"36с-1.5к"  → hours=36, credits=1.5
+```
+
+**Processing**:
+```python
+from core.utils import parse_hours_credits
+
+hours, credits = parse_hours_credits("72с-3к")
+# hours = "72"
+# credits = "3"
+```
+
+**Special Cases**:
+- Attestation (аттестация): Row 4, columns GY-HB = "108с-4.5к"
+- Electives (факультативные): Dynamically read from source
+
+### Attestation Module (Special)
+
+The attestation module is special:
+- **Row**: Dynamically located (usually after all regular subjects)
+- **Name**: "Дипломдық аттестация\nДипломная аттестация"
+- **Hours**: Usually "108с-4.5к"
+- **Columns**: Contains 4 sub-items (pages 2-4):
+  - "Аттестацияның бірінші бөлімі\nПервая часть аттестации"
+  - "Аттестацияның екінші бөлімі\nВторая часть аттестации"
+  - "Аттестацияның үшінші бөлімі\nТретья часть аттестации"
+  - "Аттестацияның төртінші бөлімі\nЧетвёртая часть аттестации"
+
+**Detection**:
+```python
+from core.utils import is_module_header
+
+is_module_header("Дипломдық аттестация")  # → True
+is_module_header("Аттестацияның бірінші бөлімі")  # → True
+```
+
+### Module Headers
+
+Modules (КМ) consist of multiple sub-subjects.
+
+**Format**: "КМ {number} {subject_name}\n{Russian_translation}"
+
+**Example**:
+```
+"КМ 01 Компьютерлік негіздер\nОсновы компьютеров"
+  ├─ Sub 1: Компьютердің құрылымы
+  ├─ Sub 2: Операциялық жүйелер
+  └─ Sub 3: Желілік технологиялар
+```
+
+**Detection**:
+```python
+is_module_header("КМ 01 Компьютерлік негіздер")  # → True
+is_module_header("КМ 02 Программалау")          # → True
+is_module_header("ОН 01 Басты пәндер")          # → False (ОН = common subjects)
+```
+
+---
+
+## Output Diploma File
+
+### File Format
+
+**Excel File** (.xlsx, generated by xlsxwriter)
+
+**Structure**: 2-4 pages per diploma, bilingual layout
+
+**File Naming Convention**:
+```
+{Last_Name}_{First_Name}_{Language}_{Year}.xlsx
+
+Examples:
+"Иванов_Иван_KZ_2025-2026.xlsx"
+"Иванов_Иван_RU_2025-2026.xlsx"
+"Petrov_Petr_EN_2025-2026.xlsx"  (future)
+```
+
+### Page Layout
+
+#### Page 1: General Information & Header
+
+| Row | Content (KZ) | Content (RU) |
+|-----|---|---|
+| 1   | [Institution Logo] | [Institution Logo] |
+| 2   | "ДИПЛОМ БАҒАЛАУ ВАЛИМЕСІ" | "ПРИЛОЖЕНИЕ К ДИПЛОМУ" |
+| 3   | Student Full Name | Student Full Name |
+| 4   | Diploma Number | Diploma Number |
+| 5   | Academic Year | Academic Year |
+| 6   | Program Name | Program Name |
+
+#### Pages 2-4: Subject Tables
+
+**Table Structure**:
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Қазақ Ұлттық Техникалық Университеті             │
+│                   ТЕХНИКАЛЫҚ ИНСТИТУТЫ ДИПЛОМ ВАЛИМЕСІ              │
+├─────┬──────────────────────────────────┬──────┬─────────┬──────────┤
+│ No. │ Пәндердің атауы                  │ Сағ. │ Кредит  │ Баллалы  │
+├─────┼──────────────────────────────────┼──────┼─────────┼──────────┤
+│ 1   │ Қазақ тілі                       │ 72   │ 3       │ 85       │
+├─────┼──────────────────────────────────┼──────┼─────────┼──────────┤
+│ 2   │ Ағылшын тілі                     │ 72   │ 3       │ 90       │
+│ ... │                                  │      │         │          │
+└─────┴──────────────────────────────────┴──────┴─────────┴──────────┘
+```
+
+**Columns**:
+- **No.**: Sequential number
+- **Пәндердің атауы** (KZ) / **Наименование дисциплин** (RU): Subject name
+- **Сағ.** (KZ) / **Часы** (RU): Hours (72, 36, etc.)
+- **Кредит** (KZ) / **Кредит** (RU): Credits (3, 1.5, etc.)
+- **Баллалы** (KZ) / **Оценка** (RU): Grade (letter: A, B+, etc. OR traditional: 5, 4, 3, 2 OR points: 85, 90)
+
+### Grade Display Format
+
+**Letter Grade** (International Standard, all languages):
+```
+A (95-100)
+A- (90-94)
+B+ (85-89)
+B (80-84)
+B- (75-79)
+C+ (70-74)
+C (65-69)
+D (50-64)
+F (0-49)
+```
+
+**Traditional Kazakh** (5-point scale):
+```
+5 (өте жақсы)   - Excellent, very good
+4 (жақсы)       - Good
+3 (қанағат)     - Satisfactory
+2 (неудовлет.)  - Unsatisfactory
+```
+
+**Traditional Russian** (5-point scale):
+```
+5 (отлично)    - Excellent, very good
+4 (хорошо)     - Good
+3 (удовл.)     - Satisfactory
+2 (неуд.)      - Unsatisfactory
+```
+
+**Numeric Points**:
+```
+95, 90, 85, 80, 75, 70, 85, 92, 78, ...
+```
+
+### Example Output (Kazakh)
+
+```
+ҚАЗАҚ ҰЛТТЫҚ ТЕХНИКАЛЫҚ УНИВЕРСИТЕТІ
+ИНФОРМАТИКА ИНСТИТУТЫ ДИПЛОМ ВАЛИМЕСІ
+
+ФИО: Иванов Иван Ивановичович
+Диплом №: 2026001
+Оқу жылы: 2025-2026
+Мамандық: Ақпараттық технологиялар (3F)
+
+┌──────┬──────────────────────────────────────────────┬───────┬──────┬────────┐
+│ № п/п│ Пәндердің атауы                              │ Сағ.  │ Кредит│ Ба'л  │
+├──────┼──────────────────────────────────────────────┼───────┼──────┼────────┤
+│ 1    │ Қазақ тілі                                   │ 72    │ 3    │ A      │
+├──────┼──────────────────────────────────────────────┼───────┼──────┼────────┤
+│ 2    │ Ағылшын тілі                                 │ 72    │ 3    │ A-     │
+│ ...  │                                              │       │      │        │
+└──────┴──────────────────────────────────────────────┴───────┴──────┴────────┘
+
+КМ 1: Компьютерлік негіздер (72с-3к)
+  - Компьютердің құрылымы: B+
+  - Операциялық жүйелер: B
+  - Желілік технологиялар: C+
+
+Түсіндіргі: Диплом валимесі студенттің білім деңгейін сипаттайды.
+```
+
+### Example Output (Russian)
+
+```
+КАЗАХСКИЙ НАЦИОНАЛЬНЫЙ ТЕХНИЧЕСКИЙ УНИВЕРСИТЕТ
+ИНСТИТУТ ИНФОРМАТИКИ ПРИЛОЖЕНИЕ К ДИПЛОМУ
+
+ФИО: Иванов Иван Ивановичович
+Диплом №: 2026001
+Учебный год: 2025-2026
+Специальность: Информационные технологии (3F)
+
+┌──────┬──────────────────────────────────────────────┬───────┬──────┬────────┐
+│ № п/п│ Наименование дисциплин                       │ Часы  │ Кредит│ Оценка │
+├──────┼──────────────────────────────────────────────┼───────┼──────┼────────┤
+│ 1    │ Казахский язык                               │ 72    │ 3    │ A      │
+├──────┼──────────────────────────────────────────────┼───────┼──────┼────────┤
+│ 2    │ Английский язык                              │ 72    │ 3    │ A-     │
+│ ...  │                                              │       │      │        │
+└──────┴──────────────────────────────────────────────┴───────┴──────┴────────┘
+
+КМ 1: Основы компьютеров (72с-3к)
+  - Структура компьютера: B+
+  - Операционные системы: B
+  - Сетевые технологии: C+
+
+Примечание: Приложение к диплому характеризует уровень образования студента.
+```
+
+---
+
+## Data Validation Rules
+
+### Input Validation (Source Excel)
+
+**Required Fields**:
+- ✓ No. (Column 0): Positive integer, unique per sheet
+- ✓ Full Name (Column 1): Non-empty text
+- ✓ Grades (Columns 2+): 0-100 or empty
+
+**Valid Grades**:
+```python
+# Valid
+85, 92, 0, ""  # Numeric 0-100 or empty
+
+# Invalid
+-5             # Negative
+105            # Over 100
+"abc"          # Non-numeric
+"8.5"          # Decimal (not allowed)
+```
+
+**Sheet Structure**:
+- Row 1 must contain subject names
+- Row 3 must contain hours-credits
+- Row 5+ contains student data
+- No blank rows between students (causes parsing failure)
+
+### Output Validation (Generated Diplomas)
+
+**Excel File Integrity**:
+```python
+import openpyxl
+wb = openpyxl.load_workbook("output.xlsx")
+assert len(wb.sheetnames) >= 1  # At least 1 sheet
+assert wb.active.max_row > 5    # Has content
+assert all(cell.value is not None for cell in wb.active[1])  # Header row filled
+```
+
+**Grid Consistency**:
+- All 4 pages have same number of rows
+- No floating columns
+- All subject rows have: No., Name, Hours, Credits, Grade
+
+**Grade Consistency**:
+- All grades must be present (no Nones unless module separator)
+- Attestation always on page 4 (last page)
+- Module headers sum sub-grades correctly
+
+---
+
+## Special Cases
+
+### Module Header Handling
+
+**Problem**: КМ modules contain sub-subjects that need sub-grades.
+
+**Solution**: 
+1. Row 1 contains "КМ 01 Модуль" 
+2. Rows 2-4 contain sub-subjects indented
+3. Grade in КМ column = "КМ 01" header grade
+4. Grades in sub-rows = individual sub-subject grades
+
+**Excel Example**:
+```
+Row 1: "КМ 01 Компьютерлік негіздер\nОсновы компьютеров" (grade: B+)
+Row 2: "  - Компьютердің құрылымы" (grade: B)
+Row 3: "  - Операциялық жүйелер" (grade: A-)
+Row 4: "  - Желілік технологиялар" (grade: C+)
+```
+
+### Elective Subjects
+
+Elective subjects are typically marked with:
+- Special prefix: "Факультативтік" (KZ) or "Факультативные" (RU)
+- OR separate section after attestation
+- OR indicated in separate column
+
+**Handling**:
+```python
+subject.is_elective = True
+
+# Display: Show as "зачтено" (RU) instead of numeric grade
+if subject.is_elective:
+    grade_display = "зачтено"  # or "сынақ" in KZ
+else:
+    grade_display = grade.letter  # or "A", "B+", etc.
+```
+
+### Attestation Module
+
+Attestation (аттестация) is special:
+- Has 4 sub-parts (Pages 2-4, one per page)
+- Always displays all 4 sub-grades
+- Total hours = "108с-4.5к" (fixed, not read from source)
+
+**Configuration** (config/settings.py):
+```python
+ATTESTATION_HOURS = "108"
+ATTESTATION_CREDITS = "4.5"
+ATTESTATION_PAGES = [2, 3, 4]  # Appears on pages 2, 3, 4
+```
+
+### Bilingual Subject Names
+
+Some subjects appear in both languages in same cell.
+
+**Patterns**:
+```
+# Pattern 1: KZ\nRU (newline separated)
+"Қазақ тілі\nКазахский язык"
+
+# Pattern 2: KZ (RU) (parentheses)
+"Қазақ тілі (Казахский язык)"
+
+# Pattern 3: Separate rows (rare)
+Row 5: "Қазақ тілі"
+Row 6: "Казахский язык"
+```
+
+**Handling**:
+```python
+from core.utils import clean_subject_name
+
+# Works for patterns 1 and 2
+kz_name, ru_name = clean_subject_name(cell_value)
+
+# For pattern 3, manually check next row
+if not ru_name and is_cyrillic_russian(next_row):
+    ru_name = next_row
+```
+
+---
+
+## Error Conditions
+
+### Parse Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `ParseError: Missing subject names in row 1` | Row 1 is empty | Fill row 1 with subject names |
+| `ParseError: Hours/credits format invalid` | Row 3 has "72 - 3" instead of "72с-3к" | Fix format in row 3 |
+| `ParseError: No students found` | No data rows after row 5 | Check data starting row (ROW_DATA_START in config) |
+| `ParseError: Corrupted cell (#REF!)` | Excel formula broken | Fix or clear cell, re-save |
+
+### Validation Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `ValidationError: Score 105 out of range` | Grade > 100 | Check source value, correct to 0-100 |
+| `ValidationError: Grade "-5" invalid` | Negative score | Fix to 0-100 or leave empty |
+| `ValidationError: Subject "blank" incomplete` | Hours or credits missing | Add hours/credits in row 3 |
+
+### Generation Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `GenerationError: Cannot write output file` | Output dir doesn't exist | Create `/output_diplomas/` directory |
+| `GenerationError: Permission denied` | Output file is open in Excel | Close Excel, try again |
+| `GenerationError: Template corrupted` | Header rows unavailable | Config points to wrong template |
+
+---
+
+## Testing with Sample Data
+
+### Create Test Excel File
+
+```python
+import pandas as pd
+
+# Create sample grades
+data = {
+    'No.': [1, 2, 3],
+    'Full Name': ['Иванов Иван', 'Петров Петр', 'Сидоров Сидор'],
+    'Қазақ тілі\nКазахский язык': [85, 90, 78],
+    'Ағылшын тілі\nАнглийский язык': [92, 88, 95],
+    'Информатика\nИнформатика': [70, 75, 80],
+}
+
+df = pd.DataFrame(data)
+df.to_excel('test_grades.xlsx', sheet_name='3F-1', index=False)
+```
+
+### Run Parser
+
+```python
+from data.excel_parser import ExcelParser
+from config.settings import SOURCE_FILE
+from config.models import Program
+
+parser = ExcelParser(SOURCE_FILE, {})
+students = parser.parse(Program.IT, '3F-1')
+
+for student in students:
+    print(f"{student.full_name}: {student.diploma_number}")
+    for subject, grade in student.grades.items():
+        print(f"  {subject}: {grade.letter}")
+```
+
+### Generate Output
+
+```python
+from data.excel_generator import DiplomaGenerator
+from config.models import Language
+
+generator = DiplomaGenerator(Program.IT, Language.KZ, "2025-2026")
+
+for student in students:
+    output_bytes = generator.generate(student)
+    
+    # Save to file
+    filename = f"{student.full_name}_KZ_2025-2026.xlsx"
+    with open(f"output/{filename}", "wb") as f:
+        f.write(output_bytes)
+```
+
+---
+
+## References
+
+- [Configuration Reference](../config/settings.py)
+- [Model Definitions](../core/models.py)
+- [Excel Parser](../data/excel_parser.py) (coming Phase 2)
+- [Diploma Generator](../data/excel_generator.py) (coming Phase 2)
+
