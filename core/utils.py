@@ -230,7 +230,6 @@ def robust_clean(val) -> str:
     
     # Check for invalid values
     if (str_val.lower() == "nan" or 
-        str_val == "0" or 
         str_val == "#REF!" or
         str_val == ""):
         return ""

@@ -1,12 +1,13 @@
 import os
-import shutil
-import xlsxwriter
-import datetime
+import openpyxl
+from openpyxl.styles import Alignment
 import math
+import re
+import gc
 from typing import Dict, Any, List
 
 class DiplomaGenerator:
-    """Единый класс для генерации Excel-дипломов на основе шаблона."""
+    """Единый класс для генерации Excel-дипломов на основе шаблона (openpyxl)."""
     
     def __init__(self, template_path: str, output_path: str, config: Dict[str, Any], terms: Dict[str, str]):
         self.template_path = template_path
@@ -14,154 +15,207 @@ class DiplomaGenerator:
         self.config = config
         self.terms = terms
         
-        # Копируем шаблон
-        shutil.copyfile(template_path, output_path)
-        self.workbook = xlsxwriter.Workbook(output_path)
-        self.worksheet = self.workbook.add_worksheet('Template')
-        self.setup_styles()
-        self.setup_page_layout()
-
-    def setup_styles(self):
-        """Создает стили для ячеек."""
-        self.styles = {
-            'text_center': self.workbook.add_format({
-                'font_name': 'Times New Roman', 'font_size': 10,
-                'align': 'center', 'valign': 'vcenter', 'text_wrap': True
-            }),
-            'text_left': self.workbook.add_format({
-                'font_name': 'Times New Roman', 'font_size': 10,
-                'align': 'left', 'valign': 'vcenter', 'text_wrap': True
-            }),
-            'text_bold_center': self.workbook.add_format({
-                'font_name': 'Times New Roman', 'font_size': 10, 'bold': True,
-                'align': 'center', 'valign': 'vcenter', 'text_wrap': True
-            }),
-            'text_bold_left': self.workbook.add_format({
-                'font_name': 'Times New Roman', 'font_size': 10, 'bold': True,
-                'align': 'left', 'valign': 'vcenter', 'text_wrap': True
-            }),
-            'header_large_bold': self.workbook.add_format({
-                'font_name': 'Times New Roman', 'font_size': 11, 'bold': True,
-                'align': 'center', 'valign': 'vcenter', 'text_wrap': True
-            })
-        }
-
-    def setup_page_layout(self):
-        """Настройка ширины колонок для A4 альбомной ориентации."""
-        self.worksheet.set_paper(9) # A4
-        self.worksheet.set_landscape()
-        self.worksheet.set_margins(left=0.1, right=0.1, top=0.1, bottom=0.1)
-        
-        # Левая страница (стр 2/4)
-        self.worksheet.set_column('A:A', 3.3)
-        self.worksheet.set_column('B:B', 28.5)
-        self.worksheet.set_column('C:C', 5.6)
-        self.worksheet.set_column('D:D', 5.3)
-        self.worksheet.set_column('E:E', 4.3)
-        self.worksheet.set_column('F:F', 3.6)
-        self.worksheet.set_column('G:G', 3.6)
-        self.worksheet.set_column('H:H', 11.0)
-        
-        self.worksheet.set_column('I:I', 3.0) # Отступ
-        
-        # Правая страница (стр 3/1)
-        self.worksheet.set_column('J:J', 3.3)
-        self.worksheet.set_column('K:K', 28.5)
-        self.worksheet.set_column('L:L', 5.6)
-        self.worksheet.set_column('M:M', 5.3)
-        self.worksheet.set_column('N:N', 4.3)
-        self.worksheet.set_column('O:O', 3.6)
-        self.worksheet.set_column('P:P', 3.6)
-        self.worksheet.set_column('Q:Q', 11.0)
+        # Загружаем существующий шаблон
+        self.workbook = openpyxl.load_workbook(template_path)
 
     def is_module_header(self, subj_name: str) -> bool:
         """Определяет, является ли предмет заголовком модуля."""
-        s = subj_name.strip()
-        # БМ не являются заголовками (это самостоятельные предметы)
-        return s.startswith("КМ") or s.startswith("ПМ") or \
+        if not subj_name:
+            return False
+        s = str(subj_name).strip()
+        return s.startswith("КМ") or s.startswith("БМ") or s.startswith("ПМ") or \
                s.startswith("Кәсіптік модуль") or s.startswith("Профессиональная практика") or \
-               s.startswith("Қорытынды аттестаттау") or s.startswith("Итоговая аттестация")
+               s.startswith("Қорытынды аттестаттау") or s.startswith("Итоговая аттестация") or \
+               s.startswith("Базовые модули") or s.startswith("Профессиональные модули") or \
+               s.startswith("Базалық модул") or s.startswith("Кәсіби модул")
 
-    def calc_row_height(self, text: str, width_chars: int = 40) -> float:
-        """Рассчитывает высоту строки в зависимости от длины текста."""
-        chars = len(str(text))
-        lines = math.ceil(chars / width_chars)
-        return max(15.0, lines * 13.0)
+    def is_practice(self, subj_name: str) -> bool:
+        """Определяет, является ли предмет практикой (оқу, кәсіптік, профессиональная и т.д)."""
+        if not subj_name: return False
+        s = str(subj_name).lower()
+        
+        # Если в таблице есть оценка или часы, это обычная практика с оценкой
+        # Но если нам нужно проставить "сынақ"/"зачтено" ТОЛЬКО для чистых практик без оценки,
+        # Мы должны быть осторожны: проф. практика (Кәсіптік практика КМ3. ОН3.2...) получает оценку, а не сынақ.
+        # В ТЗ: "сынак вставлен в проф практику а хотя оно не факультатив и там будет оценка"
+        # Поэтому мы убираем "кәсіптік практика" и "профессиональная практика" из списка дефолтных "сынақ".
+        
+        practices = [
+            "оқу практика", "учебная практика",
+            "өндірістік практика", "производственная практика", 
+            "преддипломная практика", "тәжірибе" 
+        ]
+        return any(p in s for p in practices) and "практикалық" not in s
+
+    def is_elective(self, subj_name: str) -> bool:
+        """Определяет, является ли предмет факультативом."""
+        if not subj_name: return False
+        return "факультатив" in str(subj_name).lower()
 
     def fill_student_data(self, student: Dict[str, Any]):
-        """Заполняет диплом конкретными данными."""
-        # TODO: Заполнение шапки диплома (ФИО, дата, протокол)
-        self.worksheet.write('K15', student['name'], self.styles['header_large_bold'])
-        
-        # Дата выдачи (текущая дата для примера)
-        date_str = datetime.datetime.now().strftime("%d.%m.%Y")
-        self.worksheet.write('L35', date_str, self.styles['text_center'])
-        
-        # Заполнение таблиц с предметами (Страницы 1, 2, 3, 4)
-        self._write_subjects(student['grades'], self.config['p1'], start_row=45, col_offset=9) # Page 1 (справа внизу)
-        self._write_subjects(student['grades'], self.config['p2'], start_row=1,  col_offset=0) # Page 2 (слева сверху)
-        self._write_subjects(student['grades'], self.config['p3'], start_row=1,  col_offset=9) # Page 3 (справа сверху)
-        self._write_subjects(student['grades'], self.config['p4'], start_row=46, col_offset=0) # Page 4 (слева внизу)
-
-    def _write_subjects(self, grades: Dict[str, Any], template_subjects: List[str], start_row: int, col_offset: int):
-        """Записывает блок предметов на определенную 'страницу'."""
-        current_row = start_row
+        """Заполняет диплом конкретными данными, сохраняя все стили и разметку шаблона."""
+        grades = student['grades']
+        meta = student.get('meta', {})
         from .utils import normalize_key
         
-        # Инициализируем сумму часов и кредитов
-        total_h, total_c = 0.0, 0.0
+        # ──── 0. Заполняем «шапку» на первой странице ────
+        ws1 = self.workbook.worksheets[0]
+        self._fill_header(ws1, student, meta)
         
-        for idx, subj in enumerate(template_subjects):
-            if subj.strip() in ('', ' '):
-                self.worksheet.set_row(current_row, 15)
-                current_row += 1
-                continue
+        # (Подсчет суммы удален, так как часы берутся напрямую из Excel для подмодулей)
                 
-            is_header = self.is_module_header(subj)
-            style_name = self.styles['text_bold_left'] if is_header else self.styles['text_left']
-            style_center = self.styles['text_bold_center'] if is_header else self.styles['text_center']
-            
-            # Пишем № п/п и название
-            self.worksheet.write(current_row, col_offset, idx + 1 if not is_header else "", style_center)
-            self.worksheet.write(current_row, col_offset + 1, subj, style_name)
-            self.worksheet.set_row(current_row, self.calc_row_height(subj))
-            
-            nkey = normalize_key(subj)
-            grade = grades.get(nkey)
-            
-            # Фолбэк для БМ (БМ 1 -> Базалық модульдер)
-            if not grade and re.match(r'(БМ|КМ|ПМ)\s*\.?\s*\d+', subj):
-                prefix = normalize_key(re.match(r'(БМ|КМ|ПМ)\s*\.?\s*\d+', subj).group(1))
-                for gk, gv in grades.items():
-                    if prefix in gk:
-                        grade = gv
-                        break
+        # ──── 2. Сквозная нумерация + заполнение оценок ────
+        global_num = 0  # сквозной счётчик предметов
+        
+        for sheet_idx, ws in enumerate(self.workbook.worksheets):
+            start_row = 15 if sheet_idx == 0 else 1
+            for row in range(start_row, ws.max_row + 1):
+                cell_b = ws.cell(row=row, column=2)
+                subj = cell_b.value
+                
+                if subj and isinstance(subj, str) and subj.strip():
+                    subj = subj.strip()
+                    
+                    global_num += 1
+                    ws.cell(row=row, column=1).value = global_num
+                    
+                    nkey = normalize_key(subj)
+                    grade = grades.get(nkey)
+                    if not grade and re.match(r'((?:БМ|КМ|ПМ|ОН|РО)\s*\.?\s*\d+(?:\.\d+)?)', subj, re.IGNORECASE):
+                        prefix = normalize_key(re.match(r'((?:БМ|КМ|ПМ|ОН|РО)\s*\.?\s*\d+(?:\.\d+)?)', subj, re.IGNORECASE).group(1))
+                        for gk, gv in grades.items():
+                            if gk.startswith(prefix):
+                                grade = gv
+                                break
 
-            if is_header:
-                # Заголовки: собираем сумму часов до следующего заголовка
-                # В Excel агрегациях эта сумма уже есть, используем ее, если найдем, иначе считаем сами
-                if grade and grade.get('hours'):
-                    self.worksheet.write(current_row, col_offset + 2, grade['hours'], style_center)
-                    self.worksheet.write(current_row, col_offset + 3, grade['credits'], style_center)
-                    total_h += float(grade['hours']) if str(grade['hours']).replace('.', '').isdigit() else 0
-                    total_c += float(grade['credits']) if str(grade['credits']).replace('.', '').isdigit() else 0
-            else:
-                # Обычный предмет
-                if grade:
-                    # Факультатив
-                    trad_val = grade.get('traditional_kz' if 'kz' in subj.lower() else 'traditional_ru', "")
-                    if "факультатив" in subj.lower(): trad_val = self.terms.get('traditional_elective', 'зачтено')
-                    if "практика" in subj.lower(): trad_val = self.terms.get('traditional_practice', 'зачтено')
+                    is_header = self.is_module_header(subj)
+                    hours = grade.get('hours', '') if grade else ''
+                    credits_val = grade.get('credits', '') if grade else ''
+
+                    # Агрегация часов для заголовка модуля (только для КМ и ПМ, НЕ для БМ)
+                    if is_header and not hours:
+                        m = re.search(r'(КМ|ПМ|БМ|ОН)\s*0*(\d+)', subj, re.IGNORECASE)
+                        if m:
+                            mod_type = m.group(1).lower()
+                            if mod_type != 'бм':  # "Это касается всех модулей кроме базовых"
+                                mod_num = m.group(2)
+                                prefix_search = f"он{mod_num}" if mod_type in ('км', 'пм') else f"{mod_type}{mod_num}"
+                                
+                                th, tc = 0.0, 0.0
+                                for gk, gv in grades.items():
+                                    if gk.startswith(prefix_search):
+                                        h_str = str(gv.get('hours', '0')).replace(',', '.')
+                                        c_str = str(gv.get('credits', '0')).replace(',', '.')
+                                        try: th += float(h_str) if h_str.replace('.', '', 1).isdigit() else 0
+                                        except: pass
+                                        try: tc += float(c_str) if c_str.replace('.', '', 1).isdigit() else 0
+                                        except: pass
+                                
+                                if th > 0: hours = str(int(th)) if th.is_integer() else str(th)
+                                if tc > 0: credits_val = str(int(tc)) if tc.is_integer() else str(tc)
+
+                    # Определяем тип предмета: факультатив или практика
+                    subj_kz = str(grade.get('subject_kz', '')) if grade else ''
+                    is_elec = self.is_elective(subj) or self.is_elective(subj_kz)
+                    is_prac = self.is_practice(subj) or self.is_practice(subj_kz)
                     
-                    self.worksheet.write(current_row, col_offset + 2, grade.get('hours', ''), style_center)
-                    self.worksheet.write(current_row, col_offset + 3, grade.get('credits', ''), style_center)
-                    self.worksheet.write(current_row, col_offset + 4, grade.get('points', ''), style_center)
-                    self.worksheet.write(current_row, col_offset + 5, grade.get('letter', ''), style_center)
-                    self.worksheet.write(current_row, col_offset + 6, grade.get('gpa', ''), style_center)
-                    self.worksheet.write(current_row, col_offset + 7, trad_val, self.styles['text_left'])
+                    # Записываем часы и кредиты
+                    if hours:
+                        self._write_val(ws, row, 3, hours)
+                        
+                    if credits_val:
+                        self._write_val(ws, row, 4, credits_val)
                     
-            current_row += 1
+                    # Пишем баллы и оценки (только если это не заголовок модуля)
+                    if not is_header:
+                        trad_val, pts, let, gpa = "", "", "", ""
+                        
+                        if grade:
+                            trad_val = grade.get('traditional_kz', grade.get('traditional_ru', ''))
+                            pts = grade.get('points', '')
+                            let = grade.get('letter', '')
+                            gpa = grade.get('gpa', '')
+                            
+                        # Принудительно ставим "сынақ" / "зачтено" для факультативов
+                        if is_elec:
+                            trad_val = self.terms.get('traditional_elective', 'зачтено')
+                        elif is_prac and not trad_val:
+                            # Ставим зачтено только если оценки реально нет (вообще пустая)
+                            # Иначе оставляем ту оценку, которую студент получил за практику.
+                            trad_val = self.terms.get('traditional_practice', 'зачтено')
+                            
+                        if pts: self._write_val(ws, row, 5, pts)
+                        if let: self._write_val(ws, row, 6, let)
+                        if gpa: self._write_val(ws, row, 7, gpa)
+                        if trad_val: self._write_val(ws, row, 8, trad_val, is_trad=True)
+
+        print(f"Filled data for: {student['name'].encode('cp1251', errors='ignore').decode('cp1251')}")
+
+    def _fill_header(self, ws, student: Dict[str, Any], meta: Dict[str, str]):
+        """Заполняет шапку первой страницы данными студента."""
+        is_kz = ws.title.lower().startswith('бет')
+        
+        INDENT_HALF = 4    
+        INDENT_3_4 = 6     
+        INDENT_END = 7     
+        
+        diploma_num = student.get('diploma_kz' if is_kz else 'diploma_ru', '')
+        if not diploma_num or str(diploma_num) in ('nan', ''):
+            diploma_num = ''
+        else:
+            diploma_num = re.sub(r'[^\d]', '', str(diploma_num))
+        ws.cell(row=2, column=3).value = diploma_num  
+        ws.cell(row=2, column=3).alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        
+        ws.cell(row=3, column=2).value = student['name']  
+        ws.cell(row=3, column=2).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True, indent=INDENT_HALF)
+        
+        year_start = meta.get('year_start', '')
+        year_end = meta.get('year_end', '')
+        
+        if is_kz:
+            if year_start:
+                ws.cell(row=4, column=2).value = year_start  
+                ws.cell(row=4, column=2).alignment = Alignment(horizontal='left', vertical='center', indent=INDENT_HALF)
+            if year_end:
+                ws.cell(row=4, column=6).value = year_end  
+                ws.cell(row=4, column=6).alignment = Alignment(horizontal='left', vertical='center')
+        else:
+            if year_start:
+                ws.cell(row=4, column=2).value = year_start  
+                ws.cell(row=4, column=2).alignment = Alignment(horizontal='left', vertical='center', indent=INDENT_END)
+            if year_end:
+                ws.cell(row=4, column=6).value = year_end  
+                ws.cell(row=4, column=6).alignment = Alignment(horizontal='left', vertical='center')
+        
+        from config.settings import INSTITUTION_NAME_KZ, INSTITUTION_NAME_RU
+        if is_kz:
+            college_text = INSTITUTION_NAME_KZ
+        else:
+            college_text = INSTITUTION_NAME_RU
+        
+        ws.cell(row=5, column=2).value = college_text  
+        ws.cell(row=5, column=2).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True, indent=INDENT_HALF)
+        
+        specialty = meta.get('specialty_kz' if is_kz else 'specialty_ru', '')
+        if specialty:
+            ws.cell(row=6, column=2).value = specialty  
+            ws.cell(row=6, column=2).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True, indent=INDENT_3_4)
+        
+        qualification = meta.get('qualification_kz' if is_kz else 'qualification_ru', '')
+        if qualification:
+            ws.cell(row=9, column=2).value = qualification  
+            ws.cell(row=9, column=2).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True, indent=INDENT_3_4)
+
+    def _write_val(self, ws, row, col, val, is_trad=False):
+        """Записывает значение в ячейку, сохраняя стили шаблона."""
+        cell = ws.cell(row=row, column=col)
+        cell.value = val
+        cell.alignment = Alignment(horizontal='left' if is_trad else 'center', vertical='center', wrap_text=True)
 
     def close(self):
-        """Закрывает и сохраняет файл."""
+        """Сохраняет файл и очищает память."""
+        self.workbook.save(self.output_path)
         self.workbook.close()
+        self.workbook = None
+        gc.collect()

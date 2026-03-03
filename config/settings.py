@@ -102,11 +102,17 @@ ELECTIVE_CREDITS = "1.5"
 # ─────────────────────────────────────────────────────────────
 # Institution name and full legal names in Kazakh and Russian
 
-INSTITUTION_NAME_KZ = "ҚАРТУ"
-INSTITUTION_FULL_KZ = "ҚАЗАҚ ҰЛТТЫҚ ТЕХНИКАЛЫҚ УНИВЕРСИТЕТІ"
+# INSTITUTION_NAME_KZ = "ҚАРТУ"
+# INSTITUTION_FULL_KZ = "ҚАЗАҚ ҰЛТТЫҚ ТЕХНИКАЛЫҚ УНИВЕРСИТЕТІ"
 
-INSTITUTION_NAME_RU = "КНТУ"
-INSTITUTION_FULL_RU = "КАЗАХСКИЙ НАЦИОНАЛЬНЫЙ ТЕХНИЧЕСКИЙ УНИВЕРСИТЕТ"
+# INSTITUTION_NAME_RU = "КНТУ"
+# INSTITUTION_FULL_RU = "КАЗАХСКИЙ НАЦИОНАЛЬНЫЙ ТЕХНИЧЕСКИЙ УНИВЕРСИТЕТ"
+
+INSTITUTION_NAME_KZ = "Жамбыл инновациялық жоғары колледжінде"
+INSTITUTION_FULL_KZ = "Жамбыл инновациялық жоғары колледжі"
+
+INSTITUTION_NAME_RU = "Жамбылском инновационным высшем колледже"
+INSTITUTION_FULL_RU = "Жамбылский инновационный высший колледж"
 
 # ─────────────────────────────────────────────────────────────
 # PROGRAM NAMES

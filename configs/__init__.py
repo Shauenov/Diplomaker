@@ -6,14 +6,14 @@ CONFIGS = {
     '3F': {
         'config': IT_CONFIG,
         'terms': IT_TERMS,
-        'template_kz': 'Diplom_IT_KZ_Template.xlsx',
-        'template_ru': 'Diplom_IT_RU_Template.xlsx',
+        'template_kz': 'Diplom_F_KZ_Template (4).xlsx',
+        'template_ru': 'Diplom_F_RU_Template (4).xlsx',
     },
     '3D': {
         'config': ACC_CONFIG,
         'terms': ACC_TERMS,
-        'template_kz': 'diploma_v4 (1).xlsx', # TODO: потом можно переименовать шаблон
-        'template_ru': 'diploma_ru_template.xlsx',
+        'template_kz': 'Diplom_D_KZ_Template(4).xlsx',
+        'template_ru': 'Diplom_D_RU_Template(4).xlsx',
     }
 }
 

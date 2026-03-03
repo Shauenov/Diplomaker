@@ -14,7 +14,7 @@ def normalize_key(title: str) -> str:
     t = t.replace("ү", "у").replace("ұ", "у").replace("ө", "о").replace("ә", "а").replace("ё", "е")
     
     # "км01" -> "км1", "пм05" -> "пм5"
-    t = re.sub(r'([a-zа-я0-9]+)0+([1-9]+)', r'\1\2', t)
+    t = re.sub(r'([a-zа-я])0+([1-9])', r'\1\2', t)
     return t
 
 def parse_hours_credits(val: str) -> tuple[str, str]:
@@ -22,14 +22,14 @@ def parse_hours_credits(val: str) -> tuple[str, str]:
     if not isinstance(val, str):
         return "", ""
     # Ищем 'число'+'с'+'-'+'число(с запятой/точкой)'+'к'
-    m = re.search(r"(\d+)с-(\d+(?:[.,]\d+)?)к", val, re.IGNORECASE)
+    m = re.search(r"(\d+)\s*с\s*-\s*(\d+(?:[.,]\d+)?)\s*к", val, re.IGNORECASE)
     if m:
         h = m.group(1).replace(',', '.')
         c = m.group(2).replace(',', '.')
         return h, c
     
     # Альтернативный парсинг для '72с' 
-    m2 = re.search(r"(\d+)с", val, re.IGNORECASE)
+    m2 = re.search(r"(\d+)\s*с", val, re.IGNORECASE)
     if m2:
         return m2.group(1), ""
         
