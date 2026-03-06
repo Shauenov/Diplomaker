@@ -45,6 +45,7 @@ class DiplomaGenerator:
             "өндірістік практика", "производственная практика", 
             "преддипломная практика", "тәжірибе" 
         ]
+        
         return any(p in s for p in practices) and "практикалық" not in s
 
     def is_elective(self, subj_name: str) -> bool:
@@ -87,6 +88,34 @@ class DiplomaGenerator:
                             if gk.startswith(prefix):
                                 grade = gv
                                 break
+                                
+                        # Fallback for cross-language module prefixes
+                        if not grade:
+                            alt_prefix = prefix
+                            if prefix.startswith('ро'): alt_prefix = 'он' + prefix[2:]
+                            elif prefix.startswith('он'): alt_prefix = 'ро' + prefix[2:]
+                            elif prefix.startswith('пм'): alt_prefix = 'км' + prefix[2:]
+                            elif prefix.startswith('км'): alt_prefix = 'пм' + prefix[2:]
+                            
+                            if alt_prefix != prefix:
+                                for gk, gv in grades.items():
+                                    if gk.startswith(alt_prefix):
+                                        grade = gv
+                                        break
+
+                    # Fallback для практик: "Кәсіптік практика..." / "Профессиональная практика..."
+                    # Эти строки не начинаются с КМ/ПМ/ОН/РО, поэтому не попадают в prefix-lookup.
+                    # Ищем по ключевым словам в grades (по subject_kz / subject_ru).
+                    if not grade:
+                        subj_lower = subj.lower()
+                        practice_markers = ['кәсіптік практика', 'профессиональная практика']
+                        if any(pm in subj_lower for pm in practice_markers):
+                            for gk, gv in grades.items():
+                                gv_kz = str(gv.get('subject_kz', '')).lower()
+                                gv_ru = str(gv.get('subject_ru', '')).lower()
+                                if any(pm in gv_kz or pm in gv_ru for pm in practice_markers):
+                                    grade = gv
+                                    break
 
                     is_header = self.is_module_header(subj)
                     hours = grade.get('hours', '') if grade else ''
@@ -140,9 +169,10 @@ class DiplomaGenerator:
                         if is_elec:
                             trad_val = self.terms.get('traditional_elective', 'зачтено')
                         elif is_prac and not trad_val:
-                            # Ставим зачтено только если оценки реально нет (вообще пустая)
-                            # Иначе оставляем ту оценку, которую студент получил за практику.
-                            trad_val = self.terms.get('traditional_practice', 'зачтено')
+                            # Ставим зачтено только если оценки нет И у предмета нет часов/кредитов.
+                            # Если часы и кредиты есть, это полноценная дисциплина, требующая оценки.
+                            if not hours and not credits_val:
+                                trad_val = self.terms.get('traditional_practice', 'зачтено')
                             
                         if pts: self._write_val(ws, row, 5, pts)
                         if let: self._write_val(ws, row, 6, let)

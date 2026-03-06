@@ -188,9 +188,16 @@ def parse_excel_sheet(df: pd.DataFrame, sheet_name: str, start_row: int = 5) -> 
                 # Если оценка "зачтено", "босатылды" и др. текстом
                 val_str = str(pts_val).strip()
                 if val_str:
-                    base_info['traditional'] = val_str
-                    grades[subj_info['nkz']] = base_info
-                    grades[subj_info['nru']] = base_info
+                    # Если у предмета есть часы и кредиты, он требует числовой оценки.
+                    # Случайный текст вроде "зачтено" игнорируем.
+                    has_hours_credits = bool(subj_info.get('hours')) and bool(subj_info.get('credits'))
+                    if has_hours_credits and val_str.lower() in ['зачтено', 'зачет', 'сынақ', 'сынак', 'өтті']:
+                        val_str = ""
+                    
+                    if val_str:
+                        base_info['traditional'] = val_str
+                        grades[subj_info['nkz']] = base_info
+                        grades[subj_info['nru']] = base_info
                 continue
                 
             from .utils import calc_letter_grade, calc_gpa_grade, calc_traditional_grade

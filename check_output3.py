@@ -14,12 +14,18 @@ def check(file_path):
         ws = wb[ws_name]
         for row in range(1, 65):
             val = ws.cell(row=row, column=2).value
-            if val and isinstance(val, str) and any(x in val for x in ['ПМ', 'КМ', 'ОН', 'БМ', 'Ф', 'РО', 'практика']):
+            if val and isinstance(val, str) and any(x in val for x in ['ПМ', 'КМ', 'ОН', 'БМ', 'Ф', 'РО', 'практика', 'Практика', 'Кәсіптік', 'Профессиональная', 'Итоговая', 'Қорытынды']):
                 h = ws.cell(row=row, column=3).value
                 c = ws.cell(row=row, column=4).value
+                pts = ws.cell(row=row, column=5).value
                 tr = ws.cell(row=row, column=8).value
-                print(f"Row {row:02d}: {str(val)[:30]:<30} | H: {h} C: {c} Trad: {tr}")
+                print(f"Row {row:02d}: {str(val)[:40]:<40} | H: {h} C: {c} Pts: {pts} Trad: {tr}")
 
-check("output/3D-1_Асанов Бекарыс Максатович_RU.xlsx")
+# IT KZ
+check("output/3Ғ-1_Аймахан Балауса Абайханқызы_KZ.xlsx")
+# IT RU
 check("output/3Ғ-1_Аймахан Балауса Абайханқызы_RU.xlsx")
+# ACC KZ
 check("output/3D-1_Асанов Бекарыс Максатович_KZ.xlsx")
+# ACC RU
+check("output/3D-1_Асанов Бекарыс Максатович_RU.xlsx")
