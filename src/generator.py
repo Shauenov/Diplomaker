@@ -70,15 +70,17 @@ class DiplomaGenerator:
         
         for sheet_idx, ws in enumerate(self.workbook.worksheets):
             start_row = 15 if sheet_idx == 0 else 1
+            col_shift = 1 if sheet_idx in (1, 3) else 0
+            
             for row in range(start_row, ws.max_row + 1):
-                cell_b = ws.cell(row=row, column=2)
+                cell_b = ws.cell(row=row, column=2 + col_shift)
                 subj = cell_b.value
                 
                 if subj and isinstance(subj, str) and subj.strip():
                     subj = subj.strip()
                     
                     global_num += 1
-                    ws.cell(row=row, column=1).value = global_num
+                    ws.cell(row=row, column=1 + col_shift).value = global_num
                     
                     nkey = normalize_key(subj)
                     grade = grades.get(nkey)
@@ -150,10 +152,10 @@ class DiplomaGenerator:
                     
                     # Записываем часы и кредиты
                     if hours:
-                        self._write_val(ws, row, 3, hours)
+                        self._write_val(ws, row, 3 + col_shift, hours)
                         
                     if credits_val:
-                        self._write_val(ws, row, 4, credits_val)
+                        self._write_val(ws, row, 4 + col_shift, credits_val)
                     
                     # Пишем баллы и оценки (только если это не заголовок модуля)
                     if not is_header:
@@ -174,10 +176,10 @@ class DiplomaGenerator:
                             if not hours and not credits_val:
                                 trad_val = self.terms.get('traditional_practice', 'зачтено')
                             
-                        if pts: self._write_val(ws, row, 5, pts)
-                        if let: self._write_val(ws, row, 6, let)
-                        if gpa: self._write_val(ws, row, 7, gpa)
-                        if trad_val: self._write_val(ws, row, 8, trad_val, is_trad=True)
+                        if pts: self._write_val(ws, row, 5 + col_shift, pts)
+                        if let: self._write_val(ws, row, 6 + col_shift, let)
+                        if gpa: self._write_val(ws, row, 7 + col_shift, gpa)
+                        if trad_val: self._write_val(ws, row, 8 + col_shift, trad_val, is_trad=True)
 
         print(f"Filled data for: {student['name'].encode('cp1251', errors='ignore').decode('cp1251')}")
 
@@ -189,19 +191,17 @@ class DiplomaGenerator:
         INDENT_3_4 = 6     
         INDENT_END = 7     
         
-        diploma_num = student.get('diploma_kz' if is_kz else 'diploma_ru', '')
+        diploma_num = student.get('diploma_num', '')
         if not diploma_num or str(diploma_num) in ('nan', ''):
             diploma_num = ''
-        else:
-            diploma_num = re.sub(r'[^\d]', '', str(diploma_num))
         ws.cell(row=2, column=3).value = diploma_num  
         ws.cell(row=2, column=3).alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         
         ws.cell(row=3, column=2).value = student['name']  
         ws.cell(row=3, column=2).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True, indent=INDENT_HALF)
         
-        year_start = meta.get('year_start', '')
-        year_end = meta.get('year_end', '')
+        year_start = student.get('year_start', '')
+        year_end = student.get('year_end', '')
         
         if is_kz:
             if year_start:

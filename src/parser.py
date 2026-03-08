@@ -20,8 +20,7 @@ def _parse_sheet_meta(df: pd.DataFrame) -> Dict[str, str]:
     """
     meta: Dict[str, str] = {
         'specialty_kz': '', 'qualification_kz': '',
-        'specialty_ru': '', 'qualification_ru': '',
-        'year_start': '', 'year_end': '',
+        'specialty_ru': '', 'qualification_ru': ''
     }
     
     # --- Разбор Col 1 Row 1 ---
@@ -39,17 +38,6 @@ def _parse_sheet_meta(df: pd.DataFrame) -> Dict[str, str]:
             meta['specialty_ru'] = line.split(':', 1)[-1].strip()
         elif low.startswith('квалификац'):
             meta['qualification_ru'] = line.split(':', 1)[-1].strip()
-    
-    # --- Разбор последних колонок (Год поступления / выпуска) ---
-    ncols = df.shape[1]
-    for c in range(max(0, ncols - 10), ncols):
-        hdr = str(df.iloc[3, c]) if not pd.isna(df.iloc[3, c]) else ''
-        hdr_low = hdr.lower()
-        val = str(df.iloc[4, c]).strip() if not pd.isna(df.iloc[4, c]) else ''
-        if 'поступлен' in hdr_low:
-            meta['year_start'] = val
-        elif 'выпуск' in hdr_low:
-            meta['year_end'] = val
     
     return meta
 
@@ -131,6 +119,37 @@ def parse_excel_sheet(df: pd.DataFrame, sheet_name: str, start_row: int = 5) -> 
         'жетекшісі', 'маманы', 'мамандығы'
     ]
 
+    # Ищем индексы колонок с годами и номером диплома (ищем по имени листа)
+    year_start_col_idx = -1
+    year_end_col_idx = -1
+    diploma_num_col_idx = -1
+    
+    sheet_name_low = sheet_name.lower()
+    
+    # Бухгалтеры: ET (149), EU (150), EV (151)
+    if '3d' in sheet_name_low or '3д' in sheet_name_low:
+        year_start_col_idx = 149
+        year_end_col_idx = 150
+        diploma_num_col_idx = 151
+    # IT-шники: HH (215), HI (216), HJ (217)
+    elif '3f' in sheet_name_low or '3ф' in sheet_name_low or '3ғ' in sheet_name_low:
+        year_start_col_idx = 215
+        year_end_col_idx = 216
+        diploma_num_col_idx = 217
+    else:
+        # Fallback - динамический поиск если не нашли группу в названии листа
+        row_headers = df.iloc[4]
+        ncols = len(row_headers)
+        for c in range(max(0, ncols - 10), ncols):
+            hdr = str(row_headers.iloc[c]) if not pd.isna(row_headers.iloc[c]) else ''
+            hdr_low = hdr.lower()
+            if 'поступлен' in hdr_low:
+                year_start_col_idx = c
+            elif 'выпуск' in hdr_low:
+                year_end_col_idx = c
+            elif 'диплом' in hdr_low:
+                diploma_num_col_idx = c
+
     # 2. Итерируемся по строкам студентов
     for i in range(start_row, len(df)):
         row = df.iloc[i]
@@ -164,6 +183,18 @@ def parse_excel_sheet(df: pd.DataFrame, sheet_name: str, start_row: int = 5) -> 
         diploma_kz = safe_str(row.iloc[-5]) if len(row) > 5 else ""
         diploma_ru = safe_str(row.iloc[-4]) if len(row) > 4 else ""
         
+        # Год поступления, Год выпуска, Номер диплома
+        # Безопасное чтение с проверкой границ
+        year_start = str(row.iloc[year_start_col_idx]).strip() if year_start_col_idx != -1 and year_start_col_idx < len(row) and not pd.isna(row.iloc[year_start_col_idx]) else ""
+        year_start = year_start.replace(".0", "") if year_start.endswith(".0") else year_start
+        
+        year_end = str(row.iloc[year_end_col_idx]).strip() if year_end_col_idx != -1 and year_end_col_idx < len(row) and not pd.isna(row.iloc[year_end_col_idx]) else ""
+        year_end = year_end.replace(".0", "") if year_end.endswith(".0") else year_end
+        
+        diploma_num = str(row.iloc[diploma_num_col_idx]).strip() if diploma_num_col_idx != -1 and diploma_num_col_idx < len(row) and not pd.isna(row.iloc[diploma_num_col_idx]) else ""
+        diploma_num = diploma_num.replace(" ", "")  # удаляем пробелы
+        if diploma_num == "nan": diploma_num = ""
+
         # Собираем оценки и часы по всем предметам колонок
         grades = {}
         for c_idx, subj_info in col_dict.items():
@@ -222,6 +253,9 @@ def parse_excel_sheet(df: pd.DataFrame, sheet_name: str, start_row: int = 5) -> 
             'sheet': sheet_name,
             'diploma_kz': diploma_kz,
             'diploma_ru': diploma_ru,
+            'diploma_num': diploma_num,
+            'year_start': year_start,
+            'year_end': year_end,
             'grades': grades,
             'meta': sheet_meta,
         })

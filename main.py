@@ -51,7 +51,7 @@ def main():
         # Convert read-only worksheet to DataFrame safely (limit to 200x200 to prevent infinite row bug)
         ws = wb[sheet_name]
         data = []
-        for row in ws.iter_rows(max_row=200, max_col=200, values_only=True):
+        for row in ws.iter_rows(max_row=200, max_col=300, values_only=True):
             data.append(row)
         df = pd.DataFrame(data)
         students = parse_excel_sheet(df, sheet_name, start_row=5)
