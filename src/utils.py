@@ -54,37 +54,7 @@ def clean_name(full_name: str) -> str:
     if not full_name: return ""
     return re.sub(r'\s+', ' ', str(full_name).strip())
 
-def calc_letter_grade(points_val: float) -> str:
-    """Возвращает буквенную оценку по баллам."""
-    if points_val >= 95: return "A"
-    if points_val >= 90: return "A-"
-    if points_val >= 85: return "B+"
-    if points_val >= 80: return "B"
-    if points_val >= 75: return "B-"
-    if points_val >= 70: return "C+"
-    if points_val >= 65: return "C"
-    if points_val >= 60: return "C-"
-    if points_val >= 55: return "D+"
-    if points_val >= 50: return "D"
-    return "F"
-
-def calc_gpa_grade(points_val: float) -> float:
-    """Возвращает GPA по баллам."""
-    if points_val >= 95: return 4.0
-    if points_val >= 90: return 3.67
-    if points_val >= 85: return 3.33
-    if points_val >= 80: return 3.0
-    if points_val >= 75: return 2.67
-    if points_val >= 70: return 2.33
-    if points_val >= 65: return 2.0
-    if points_val >= 60: return 1.67
-    if points_val >= 55: return 1.33
-    if points_val >= 50: return 1.0
-    return 0.0
-
-def calc_traditional_grade(points_val: float, is_kz: bool = True) -> str:
-    """Возвращает традиционную оценку (отлично, жаксы и т.д.)."""
-    if points_val >= 90: return "өте жақсы" if is_kz else "отлично"
-    if points_val >= 70: return "жақсы" if is_kz else "хорошо"
-    if points_val >= 50: return "қанағаттанарлық" if is_kz else "удовлетворительно"
-    return "қанағаттанарлықсыз" if is_kz else "неудовл."
+# ─────────────────────────────────────────────────────────────
+# Grade conversion functions moved to core/converters.py
+# which uses centralized GRADE_THRESHOLDS from config/settings.py
+# ─────────────────────────────────────────────────────────────

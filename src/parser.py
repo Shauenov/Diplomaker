@@ -1,7 +1,9 @@
 import pandas as pd
-import re as _re
 from typing import Dict, Any, List
-from .utils import normalize_key, parse_hours_credits, safe_str, clean_name
+from .utils import normalize_key, safe_str, clean_name
+from .columns_config import SUBJECT_COLUMNS, META_COLUMNS
+from core.converters import convert_score_to_grade
+from config.settings import META_FIELD_COLUMNS
 
 
 def _parse_sheet_meta(df: pd.DataFrame) -> Dict[str, str]:
@@ -60,95 +62,45 @@ def parse_excel_sheet(df: pd.DataFrame, sheet_name: str, start_row: int = 5) -> 
     # Извлекаем мета-данные листа (специальность, квалификация, годы)
     sheet_meta = _parse_sheet_meta(df)
     
-    # 1. Извлекаем предметы и часы (названия колонок)
-    #    Row 1 — верхнеуровневые / общеобразовательные предметы
-    #    Row 2 — детальные ОН / БМ (приоритетнее row 1)
-    row_subjects = df.iloc[1]
-    row_sub_subjects = df.iloc[2]
-    
-    # Динамический поиск строки с часами (Сағат саны)
-    row_hours = df.iloc[3] # default
-    for r in range(min(10, len(df))):
-        val_c1 = str(df.iloc[r, 0]).strip().lower() if not pd.isna(df.iloc[r, 0]) else ''
-        val_c2 = str(df.iloc[r, 1]).strip().lower() if not pd.isna(df.iloc[r, 1]) else ''
-        if 'сағат' in val_c1 or 'часы' in val_c1 or 'сағат' in val_c2 or 'часы' in val_c2:
-            row_hours = df.iloc[r]
-            break
-    
-    # Кэш колонок: col_index -> { 'kz': .., 'ru': .., 'nkz':.., 'nru':.., 'hours':.., 'credits':.. }
-    col_dict = {}
-    ncols = max(len(row_subjects), len(row_sub_subjects))
-    for col in range(2, ncols):
-        # Сначала проверяем row 2 (детальное название предмета)
-        cv_sub = row_sub_subjects.iloc[col] if col < len(row_sub_subjects) else None
-        cv_main = row_subjects.iloc[col] if col < len(row_subjects) else None
-        
-        raw = None
-        # Row 2 имеет приоритет (детальные ОН, БМ)
-        if cv_sub is not None and not pd.isna(cv_sub):
-            s = str(cv_sub).strip()
-            # Пропускаем служебные строки вроде "Сабақтар"
-            if s and s.lower() != 'nan' and 'Сабақтар' not in s and 'сағат' not in s.lower():
-                raw = s
-        
-        # Если row 2 пустая, берём row 1 (общеобразовательные предметы)
-        if raw is None:
-            if cv_main is not None and not pd.isna(cv_main) and str(cv_main).strip() not in ('', 'nan'):
-                raw = str(cv_main).strip()
-        
-        if raw is None:
-            continue
-            
-        parts = raw.split('\n')
-        kz_name = parts[0].strip().rstrip(':')
-        ru_name = parts[1].strip().rstrip(':') if len(parts) >= 2 else kz_name
-        
-        h_str = safe_str(row_hours.iloc[col]) if col < len(row_hours) else ""
-        hours, credits = parse_hours_credits(h_str)
-        
-        col_dict[col] = {
-            'kz': kz_name, 'ru': ru_name,
-            'nkz': normalize_key(kz_name), 'nru': normalize_key(ru_name),
-            'hours': hours, 'credits': credits
-        }
+    # 1. Определяем группу по имени листа и загружаем хардкод
+    sheet_name_low = sheet_name.lower()
+    if '3d' in sheet_name_low or '3д' in sheet_name_low:
+        group_key = '3D'
+    elif '3f' in sheet_name_low or '3ф' in sheet_name_low or '3ғ' in sheet_name_low:
+        group_key = '3F'
+    else:
+        group_key = None
 
-    # Non-student row markers to skip (all lowercase, any language)
+    # Кэш колонок из хардкод-конфига
+    col_dict = {}
+    if group_key and group_key in SUBJECT_COLUMNS:
+        for col_idx, info in SUBJECT_COLUMNS[group_key].items():
+            kz_name = info['kz']
+            ru_name = info['ru'] if info['ru'] else kz_name
+            col_dict[col_idx] = {
+                'kz': kz_name, 'ru': ru_name,
+                'nkz': normalize_key(kz_name), 'nru': normalize_key(ru_name),
+                'hours': info['hours'], 'credits': info['credits']
+            }
+
+    # Non-student row markers to skip
     NON_STUDENT_MARKERS = [
         'сағат саны', 'часы', 'итого', 'жиыны', 'барлығы',
         'руководитель', 'директор', 'заместитель', 'куратор',
         'жетекшісі', 'маманы', 'мамандығы'
     ]
 
-    # Ищем индексы колонок с годами и номером диплома (ищем по имени листа)
-    year_start_col_idx = -1
-    year_end_col_idx = -1
-    diploma_num_col_idx = -1
-    
-    sheet_name_low = sheet_name.lower()
-    
-    # Бухгалтеры: ET (149), EU (150), EV (151)
-    if '3d' in sheet_name_low or '3д' in sheet_name_low:
-        year_start_col_idx = 149
-        year_end_col_idx = 150
-        diploma_num_col_idx = 151
-    # IT-шники: HH (215), HI (216), HJ (217)
-    elif '3f' in sheet_name_low or '3ф' in sheet_name_low or '3ғ' in sheet_name_low:
-        year_start_col_idx = 215
-        year_end_col_idx = 216
-        diploma_num_col_idx = 217
-    else:
-        # Fallback - динамический поиск если не нашли группу в названии листа
-        row_headers = df.iloc[4]
-        ncols = len(row_headers)
-        for c in range(max(0, ncols - 10), ncols):
-            hdr = str(row_headers.iloc[c]) if not pd.isna(row_headers.iloc[c]) else ''
-            hdr_low = hdr.lower()
-            if 'поступлен' in hdr_low:
-                year_start_col_idx = c
-            elif 'выпуск' in hdr_low:
-                year_end_col_idx = c
-            elif 'диплом' in hdr_low:
-                diploma_num_col_idx = c
+    # Хардкод индексов для года поступления, выпуска и номера диплома
+    # Primary source: centralized config/settings.py
+    # Fallback: legacy src/columns_config.py mapping
+    meta_cols = {}
+    if group_key:
+        meta_cols = META_FIELD_COLUMNS.get(group_key, {})
+        if not meta_cols:
+            meta_cols = META_COLUMNS.get(group_key, {})
+    year_start_col_idx = meta_cols.get('year_start', -1)
+    year_end_col_idx = meta_cols.get('year_end', -1)
+    diploma_num_col_idx = meta_cols.get('diploma_num', -1)
 
     # 2. Итерируемся по строкам студентов
     for i in range(start_row, len(df)):
@@ -197,8 +149,22 @@ def parse_excel_sheet(df: pd.DataFrame, sheet_name: str, start_row: int = 5) -> 
 
         # Собираем оценки и часы по всем предметам колонок
         grades = {}
-        for c_idx, subj_info in col_dict.items():
-            pts_val = row.iloc[c_idx]
+        sorted_keys = sorted(col_dict.keys())
+        
+        for i, c_idx in enumerate(sorted_keys):
+            subj_info = col_dict[c_idx]
+            
+            # Find max offset (distance to next subject)
+            max_offset = sorted_keys[i + 1] - c_idx if i < len(sorted_keys) - 1 else 4
+            
+            pts_val = None
+            for offset in range(max_offset):
+                chk_idx = c_idx + offset
+                if chk_idx < len(row):
+                    val = row.iloc[chk_idx]
+                    if pd.notna(val) and str(val).strip() != '':
+                        pts_val = val
+                        break
 
             # Всегда сохраняем базовую инфу по часам и кредитам (важно для заголовков модулей)
             base_info = {
@@ -208,7 +174,7 @@ def parse_excel_sheet(df: pd.DataFrame, sheet_name: str, start_row: int = 5) -> 
                 'traditional_kz': '', 'traditional_ru': ''
             }
 
-            if pd.isna(pts_val) or str(pts_val).strip() == '':
+            if pts_val is None or str(pts_val).strip() == '':
                 grades[subj_info['nkz']] = base_info
                 grades[subj_info['nru']] = base_info
                 continue
@@ -230,19 +196,18 @@ def parse_excel_sheet(df: pd.DataFrame, sheet_name: str, start_row: int = 5) -> 
                         grades[subj_info['nkz']] = base_info
                         grades[subj_info['nru']] = base_info
                 continue
-                
-            from .utils import calc_letter_grade, calc_gpa_grade, calc_traditional_grade
             
-            letter = calc_letter_grade(pts)
-            gpa = f"{calc_gpa_grade(pts):.2f}"
-            gpa = str(int(float(gpa))) if gpa.endswith('.00') else gpa
+            # Централизованная конвертация оценок через config/settings.GRADE_THRESHOLDS
+            grade_obj = convert_score_to_grade(str(pts))
+            gpa_str = f"{grade_obj.gpa:.2f}" if grade_obj.gpa is not None else ""
+            gpa_str = str(int(float(gpa_str))) if gpa_str.endswith('.00') else gpa_str
             
             base_info.update({
                 'points': str(int(pts)) if pts.is_integer() else str(pts),
-                'letter': letter,
-                'gpa': gpa,
-                'traditional_kz': calc_traditional_grade(pts, True),
-                'traditional_ru': calc_traditional_grade(pts, False)
+                'letter': grade_obj.letter,
+                'gpa': gpa_str,
+                'traditional_kz': grade_obj.traditional_kz,
+                'traditional_ru': grade_obj.traditional_ru
             })
             
             grades[subj_info['nkz']] = base_info

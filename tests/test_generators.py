@@ -33,9 +33,9 @@ def sample_student():
     
     # Add sample grades
     grades = {
-        "Қазақ тілі": Grade(points="85", letter="B+", gpa=3.33, traditional_kz="жақсы", traditional_ru="хорошо"),
-        "Ағылшын тілі": Grade(points="90", letter="A-", gpa=3.67, traditional_kz="өте жақсы", traditional_ru="отлично"),
-        "Математика": Grade(points="78", letter="C+", gpa=2.33, traditional_kz="қанағаттанарлық", traditional_ru="удовлетворительно"),
+        "Қазақ тілі": Grade(points="85", letter="B+", gpa=3.33, traditional_kz="4 (жақсы)", traditional_ru="4 (хорошо)"),
+        "Ағылшын тілі": Grade(points="90", letter="A-", gpa=3.67, traditional_kz="5 (өте жақсы)", traditional_ru="5 (отлично)"),
+        "Математика": Grade(points="78", letter="C+", gpa=2.33, traditional_kz="4 (жақсы)", traditional_ru="4 (хорошо)"),
     }
     
     for subject_name, grade in grades.items():

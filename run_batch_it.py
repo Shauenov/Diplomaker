@@ -22,6 +22,8 @@ import pandas as pd
 from configs import get_config
 from src.parser import parse_excel_sheet
 from src.generator import DiplomaGenerator
+from core.bridge import build_diploma_pages
+from core.consistency import assert_program_subject_mapping, validate_program_subject_mapping
 from config.settings import SOURCE_FILE
 
 
@@ -34,6 +36,15 @@ def main():
     parser.add_argument("--output", type=str, default=None,
                         help="Папка для вывода (по умолчанию: output_diplomas/<timestamp>)")
     args = parser.parse_args()
+
+    # Preflight: ensure parsing map and program layout are consistent
+    assert_program_subject_mapping("3F")
+    report = validate_program_subject_mapping("3F")
+    if report["extra_count"] > 0:
+        print(
+            f"[WARN] Non-blocking mapping extras for 3F: "
+            f"{report['extra_count']} (examples: {report['extra_examples'][:3]})"
+        )
 
     source_file = args.source
     if not os.path.exists(source_file):
@@ -108,8 +119,11 @@ def main():
                 out_path = os.path.join(output_dir, out_name)
 
                 try:
+                    # Bridge: map parsed grades onto PROGRAM_PAGES structure
+                    structured = build_diploma_pages(student['grades'], "3F")
+
                     generator = DiplomaGenerator(template_path, out_path, config, terms)
-                    generator.fill_student_data(student)
+                    generator.fill_from_pages(student, structured, lang=lang)
                     generator.close()
                     total_generated += 1
 

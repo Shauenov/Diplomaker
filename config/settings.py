@@ -67,6 +67,15 @@ COL_START_SUBJECTS = 2
 # Subjects stride: 4 columns per subject (п, б, цэ, трад)
 SUBJECT_COLUMNS_STRIDE = 4
 
+# Program-specific columns for student meta fields (0-based)
+# These are stable hardcoded positions in source Excel:
+# - 3D (Accounting): year_start=149, year_end=150, diploma_num=151
+# - 3F (IT):         year_start=215, year_end=216, diploma_num=217
+META_FIELD_COLUMNS = {
+    "3D": {"year_start": 168, "year_end": 169, "diploma_num": 170},
+    "3F": {"year_start": 215, "year_end": 216, "diploma_num": 217},
+}
+
 # ─────────────────────────────────────────────────────────────
 # GRADE CONVERSION THRESHOLDS
 # ─────────────────────────────────────────────────────────────

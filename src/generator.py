@@ -4,7 +4,7 @@ from openpyxl.styles import Alignment
 import math
 import re
 import gc
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 class DiplomaGenerator:
     """Единый класс для генерации Excel-дипломов на основе шаблона (openpyxl)."""
@@ -23,9 +23,8 @@ class DiplomaGenerator:
         if not subj_name:
             return False
         s = str(subj_name).strip()
-        return s.startswith("КМ") or s.startswith("БМ") or s.startswith("ПМ") or \
+        return s.startswith("КМ") or s.startswith("ПМ") or \
                s.startswith("Кәсіптік модуль") or s.startswith("Профессиональная практика") or \
-               s.startswith("Қорытынды аттестаттау") or s.startswith("Итоговая аттестация") or \
                s.startswith("Базовые модули") or s.startswith("Профессиональные модули") or \
                s.startswith("Базалық модул") or s.startswith("Кәсіби модул")
 
@@ -242,6 +241,130 @@ class DiplomaGenerator:
         cell = ws.cell(row=row, column=col)
         cell.value = val
         cell.alignment = Alignment(horizontal='left' if is_trad else 'center', vertical='center', wrap_text=True)
+
+    # ─────────────────────────────────────────────────────────
+    # NEW: structured generation via bridge (PROGRAM_PAGES)
+    # ─────────────────────────────────────────────────────────
+
+    def fill_from_pages(
+        self,
+        student: Dict[str, Any],
+        structured_pages: Dict[int, list],
+        lang: str = "kz",
+    ):
+        """
+        Заполняет диплом структурированными данными из core.bridge.
+
+        В отличие от fill_student_data() (который сканирует шаблон и ищет
+        совпадения по named-keys), этот метод использует готовую раскладку:
+        structured_pages = {page_num: [entry, ...]}
+
+        Каждый entry содержит:
+            subject, hours, credits, points, letter, gpa,
+            traditional_kz, traditional_ru, is_header, is_practice
+
+        Алгоритм:
+            1. Заполняет шапку на 1-й странице (_fill_header)
+            2. Для каждого листа шаблона последовательно пишет данные
+               из structured_pages[page_num]
+        """
+        meta = student.get('meta', {})
+        is_kz = lang.lower() == 'kz'
+
+        # ── 0. Заполняем шапку ──
+        ws1 = self.workbook.worksheets[0]
+        self._fill_header(ws1, student, meta)
+
+        # ── 1. Маппинг: page_num → sheet_idx ──
+        # Соответствие: page 1 → sheet 0, page 2 → sheet 1, etc.
+        global_num = 0
+
+        for sheet_idx, ws in enumerate(self.workbook.worksheets):
+            page_num = sheet_idx + 1
+            entries = structured_pages.get(page_num, [])
+            if not entries:
+                continue
+
+            start_row = 15 if sheet_idx == 0 else 1
+            col_shift = 1 if sheet_idx in (1, 3) else 0
+
+            entry_idx = 0  # pointer into entries
+
+            for row in range(start_row, ws.max_row + 1):
+                if entry_idx >= len(entries):
+                    break
+
+                cell_b = ws.cell(row=row, column=2 + col_shift)
+                subj_text = cell_b.value
+
+                if not subj_text or not isinstance(subj_text, str) or not subj_text.strip():
+                    continue
+
+                # This row has a subject — match it with next entry
+                entry = entries[entry_idx]
+                entry_idx += 1
+
+                # Сквозная нумерация
+                global_num += 1
+                ws.cell(row=row, column=1 + col_shift).value = global_num
+
+                hours = entry['hours']
+                credits_val = entry['credits']
+                is_header = entry['is_header']
+                is_practice = entry['is_practice']
+
+                # Агрегация часов для заголовков модулей (КМ/ПМ, НЕ БМ)
+                if is_header and not hours:
+                    subj_obj = entry['subject']
+                    m = re.search(r'(КМ|ПМ|БМ|ОН)\s*0*(\d+)', subj_obj.name_kz, re.IGNORECASE)
+                    if m:
+                        mod_type = m.group(1).lower()
+                        if mod_type != 'бм':
+                            mod_num = m.group(2)
+                            prefix_search = f"он{mod_num}" if mod_type in ('км', 'пм') else f"{mod_type}{mod_num}"
+                            th, tc = 0.0, 0.0
+                            # aggregate from all entries on all pages
+                            for pn, pe_list in structured_pages.items():
+                                for pe in pe_list:
+                                    from .utils import normalize_key as _nk
+                                    nk = _nk(pe['subject'].name_kz)
+                                    if nk.startswith(prefix_search):
+                                        h = str(pe['hours']).replace(',', '.')
+                                        c = str(pe['credits']).replace(',', '.')
+                                        try: th += float(h) if h.replace('.', '', 1).isdigit() else 0
+                                        except: pass
+                                        try: tc += float(c) if c.replace('.', '', 1).isdigit() else 0
+                                        except: pass
+                            if th > 0: hours = str(int(th)) if th == int(th) else str(th)
+                            if tc > 0: credits_val = str(int(tc)) if tc == int(tc) else str(tc)
+
+                # Часы и кредиты
+                if hours:
+                    self._write_val(ws, row, 3 + col_shift, hours)
+                if credits_val:
+                    self._write_val(ws, row, 4 + col_shift, credits_val)
+
+                # Оценки (только для не-заголовков)
+                if not is_header:
+                    trad = entry['traditional_kz'] if is_kz else entry['traditional_ru']
+                    pts = entry['points']
+                    let = entry['letter']
+                    gpa = entry['gpa']
+
+                    # Факультативы → сынақ/зачтено
+                    subj_obj = entry['subject']
+                    if subj_obj.is_elective:
+                        trad = self.terms.get('traditional_elective', 'зачтено')
+                    elif is_practice and not trad:
+                        if not hours and not credits_val:
+                            trad = self.terms.get('traditional_practice', 'зачтено')
+
+                    if pts: self._write_val(ws, row, 5 + col_shift, pts)
+                    if let: self._write_val(ws, row, 6 + col_shift, let)
+                    if gpa: self._write_val(ws, row, 7 + col_shift, gpa)
+                    if trad: self._write_val(ws, row, 8 + col_shift, trad, is_trad=True)
+
+        print(f"Filled (bridged) data for: {student['name']}")
 
     def close(self):
         """Сохраняет файл и очищает память."""

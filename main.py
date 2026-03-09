@@ -6,6 +6,8 @@ from typing import List
 from configs import get_config
 from src.parser import parse_excel_sheet
 from src.generator import DiplomaGenerator
+from core.bridge import build_diploma_pages
+from core.consistency import assert_program_subject_mapping, validate_program_subject_mapping
 import sys
 
 # Force utf-8 for Windows console
@@ -21,6 +23,15 @@ def main():
     parser.add_argument("--group", type=str, required=True, choices=["3F", "3D"], help="Группа: 3F (IT) или 3D (Бухгалтеры)")
     parser.add_argument("--lang", type=str, default="ALL", choices=["KZ", "RU", "ALL"], help="Язык диплома")
     args = parser.parse_args()
+
+    # Preflight: ensure parsing map and program layout are consistent
+    assert_program_subject_mapping(args.group)
+    report = validate_program_subject_mapping(args.group)
+    if report["extra_count"] > 0:
+        print(
+            f"[WARN] Non-blocking mapping extras for {args.group}: "
+            f"{report['extra_count']} (examples: {report['extra_examples'][:3]})"
+        )
     
     source_file = args.source
     if not os.path.exists(source_file):
@@ -29,16 +40,19 @@ def main():
         
     os.makedirs("output", exist_ok=True)
     
-    # 1. Загружаем Excel
-    print(f"Loading '{source_file}'...", flush=True)
-    import openpyxl
-    wb = openpyxl.load_workbook(source_file, read_only=True, data_only=True)
+    # 1. Загружаем Excel используя Calamine (ОЧЕНЬ БЫСТРО)
+    print(f"Loading '{source_file}' using calamine...", flush=True)
+    try:
+        xl = pd.ExcelFile(source_file, engine='calamine')
+    except Exception as e:
+        print(f"Failed to load with calamine, falling back to default: {e}")
+        xl = pd.ExcelFile(source_file)
     
     target_prefix = args.group
     if target_prefix == "3F":
         target_prefix = "3Ғ"  # Автозамена на казахскую 'Ғ'
         
-    target_sheets = [s for s in wb.sheetnames if s.startswith(target_prefix)]
+    target_sheets = [s for s in xl.sheet_names if s.startswith(target_prefix)]
     
     if not target_sheets:
         print(f"No sheets found starting with {target_prefix}")
@@ -48,12 +62,12 @@ def main():
     
     for sheet_name in target_sheets:
         print(f"\nProcessing sheet: {sheet_name}", flush=True)
-        # Convert read-only worksheet to DataFrame safely (limit to 200x200 to prevent infinite row bug)
-        ws = wb[sheet_name]
-        data = []
-        for row in ws.iter_rows(max_row=200, max_col=300, values_only=True):
-            data.append(row)
-        df = pd.DataFrame(data)
+        # Parse fully using calamine DataFrame extractor
+        df = xl.parse(sheet_name, header=None)
+        
+        # Limit processing range for speed (simulating openpyxl's max_row=200, max_col=300)
+        df = df.iloc[:200, :300]
+        
         students = parse_excel_sheet(df, sheet_name, start_row=5)
         print(f"  Found {len(students)} students.")
         
@@ -72,11 +86,11 @@ def main():
                 out_path = os.path.join("output", out_name)
                 
                 try:
-                    print(f"    [DEBUG] Starting generator for {lang.upper()} template {template_path}...", flush=True)
+                    # Bridge: map parsed grades onto PROGRAM_PAGES structure
+                    structured = build_diploma_pages(s['grades'], args.group)
+
                     generator = DiplomaGenerator(template_path, out_path, config, terms)
-                    print(f"    [DEBUG] Fill student data...", flush=True)
-                    generator.fill_student_data(s)
-                    print(f"    [DEBUG] Closing...", flush=True)
+                    generator.fill_from_pages(s, structured, lang=lang)
                     generator.close()
                     print(f"    + {out_name}", flush=True)
                 except Exception as e:

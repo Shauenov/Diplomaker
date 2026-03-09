@@ -1,15 +1,15 @@
-from .subjects_acc_kz import (
-    PAGE1_SUBJECTS as KZ_P1,
-    PAGE2_SUBJECTS as KZ_P2,
-    PAGE3_SUBJECTS as KZ_P3,
-    PAGE4_SUBJECTS as KZ_P4
-)
-from .subjects_acc_ru import (
-    PAGE1_SUBJECTS as RU_P1,
-    PAGE2_SUBJECTS as RU_P2,
-    PAGE3_SUBJECTS as RU_P3,
-    PAGE4_SUBJECTS as RU_P4
-)
+# -*- coding: utf-8 -*-
+"""Accounting program config — derived from centralized config/programs.py"""
+
+from config.programs import PROGRAM_ACCOUNTING_PAGES
+
+# Автоматически строим списки предметов по страницам из единого источника
+def _build_page_subjects(pages_dict, lang_attr):
+    """Извлекает списки имен предметов из Subject-объектов programs.py."""
+    result = {}
+    for page_num, subjects in pages_dict.items():
+        result[f'p{page_num}'] = [getattr(s, lang_attr) for s in subjects]
+    return result
 
 # Термины для таблицы (зачет/отлично)
 TERMS = {
@@ -26,16 +26,6 @@ TERMS = {
 }
 
 ACC_CONFIG = {
-    'kz': {
-        'p1': KZ_P1,
-        'p2': KZ_P2,
-        'p3': KZ_P3,
-        'p4': KZ_P4,
-    },
-    'ru': {
-        'p1': RU_P1,
-        'p2': RU_P2,
-        'p3': RU_P3,
-        'p4': RU_P4,
-    }
+    'kz': _build_page_subjects(PROGRAM_ACCOUNTING_PAGES, 'name_kz'),
+    'ru': _build_page_subjects(PROGRAM_ACCOUNTING_PAGES, 'name_ru'),
 }

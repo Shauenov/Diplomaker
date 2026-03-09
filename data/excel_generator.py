@@ -19,181 +19,21 @@ Usage:
 """
 
 import io
-import re
 import xlsxwriter
 from typing import List, Dict, Optional
 
 from core.models import Student, Grade, Subject, Language, Program
 from config.languages import ELECTIVE_GRADES
 from core.utils import is_module_header, normalize_key
-
-
-# ─────────────────────────────────────────────────────────────
-# HARDCODED SUBJECT LISTS (from official templates)
-# ─────────────────────────────────────────────────────────────
-
-_PAGE1_KZ = [
-    "Қазақ тілі",
-    "Қазақ әдебиеті",
-    "Орыс тілі және әдебиеті",
-    "Ағылшын тілі",
-    "Қазақстан тарихы",
-    "Математика",
-    "Информатика",
-    "Алғашқы әскери және технологиялық дайындық",
-    "Дене тәрбиесі",
-    "Физика",
-    "Химия",
-    "Биология",
-    "Дүниежүзі тарихы",
-]
-
-_PAGE2_KZ = [
-    "БМ 01 Дене қасиеттерін дамыту және жетілдіру",
-    "БМ 02 Ақпараттық-коммуникациялық және цифрлық технологияларды қолдану",
-    "БМ 03 Экономиканың базалық білімін және кәсіпкерлік негіздерін қолдану",
-    "БМ 04 Қоғам мен еңбек ұжымында әлеуметтену және бейімделу үшін әлеуметтік ғылымдар негіздерін қолдану",
-    "КМ 01 Кәсіптік қызмет саласында коммуникация үшін ауызша және жазбаша қарым-қатынас дағдыларын пайдалану",
-    "ОН 1.1 Кәсіптік салада қарым-қатынас жасауға қажетті ағылшын тілінің лексика-грамматикалық материалдарын меңгеру",
-    "ОН 1.2 Кәсіптік бағыттағы мәтіндерді оқу және аудару",
-    "ОН 1.3 Ойды жеткізудегі негізгі сөйлеу формаларын қалыптастыру",
-    "ОН 1.4 Іскерлік мақсатта екінші шетел тілін қолдану",
-    "КМ 02 Кәсіби қызметте математикалық, статистикалық есептерді қолдану",
-    "ОН 2.1 Тізбекті алгебра негізгі түсінігі мен әдістерін қолдану",
-    "ОН 2.2 Аналитикалық геометрия негізгі түсінігі мен әдістерін қолдану",
-    "ОН 2.3 Математикалық талдаудың негіздерін қалыптастыру",
-    "КМ 03 Front-end web ресурстарды құру",
-    "ОН 3.1 Контентті басқару жүйесі үшін жеке шаблондар мен плагиндер жасау",
-    "ОН 3.2 Веб-сайттың көрінісін өзгерту үшін CSS немесе басқа сыртқы файлдарды пайдалану",
-    "ОН 3.3 Пайдаланушылар үшін web-сайттарды құру, жаңарту және іздеу жүйесін құрастыру",
-    "КМ 04 Графикалық дизайн жасау",
-    "ОН 4.1 Өнеркәсіптік дизайнның жан-жағынан жинақталған бұйымдардың жобасын жасау",
-    "ОН 4.2 Дизайн макеттерін дайындау",
-    "ОН 4.3 Компьютерде растрлық және векторлық бейнелерді құрастыру",
-]
-
-_PAGE3_KZ = [
-    "КМ 05 Алгоритмге кіріспе түрлерін пайдаланып, бағдарламалар жасау",
-    "ОН 5.1 Клиент-сервер негізінде бағдарламалық шешімдердің кодтарын құрастыру",
-    "ОН 5.2 Кодтарды өзгерту үшін соңғы бағдарламалық жасақтаманы әзірлеу орталары мен құралдарын пайдалану",
-    "ОН 5.3 Жүйені дамыту әдістемелерін пайдалану",
-    "КМ 06 IT Менеджмент стандарттарымен экологиялық және қауіпсіздік шаралармен жобаларды басқару",
-    "ОН 6.1 Пайдаланушы сұхбат, сауалнама, құжаттарды іздеу және талдау, бірлескен бағдарламаны әзірлеу және бақылау талаптарын өңдеу",
-    "ОН 6.2 Шешім қабылдау үшін баламаларды әзірлеу, ең қолайлы баламаны таңдау және қажетті шешімді жасау",
-   "ОН 6.3 Бағдарламалық қамтамасыздандырудың мақсат пен міндет қоюды жүзеге асыру және қойылатын талаптарды әзірлеу",
-    "ОН 6.4 Өндірістегі бағдарламалық компоненттерге техникалық, экологиялық және қауіпсіздік шараларын ескере отырып IT шешімдерін әзірлеу",
-    "КМ 07 Back-end web ресурстарын құру",
-    "ОН 7.1 Сервер мен клиенттік жүйелер арасындағы байланысты басқару",
-    "ОН 7.2 Деректер базасымен жұмыс істеу технологиясын пайдалану",
-    "ОН 7.3 Бағдарламалық жасақтаманың дизайн үлгілерін пайданалу",
-    "КМ 08 UX/UI визуалды дизайн жасау",
-    "ОН 8.1 Мультимедиялық қосымшаларды, web-элементтерді құрастыру",
-    "ОН 8.2 Графикалық интерфейске қосу үшін графикалық материалдарды дайындау",
-    "ОН 8.3 Графикалық пайдаланушы интерфейс элементтерінің визуалды дизайнын жасау",
-    "КМ 09 Мобильді қосымшаларды әзірлеу",
-    "ОН 9.1 Деректерді жасау, сақтау және басқару үшін дерекқорды басқару жүйесін пайдалану",
-    "ОН 9.2 Деңгейлі құрылғыларды жасау",
-    "ОН 9.3 Клиент-сервер негізіндегі жүйе үшін мобильді интерфейсті құрастыру",
-]
-
-_PAGE4_KZ = [
-    "КМ 10 Жобалық іс-шараларды орындау",
-    "ОН 10.1 Өз бетінше жобалау жұмыстарына практикалық дағдыларды қалыптастыру",
-    "ОН 10.2 Тәжірибе негізінде қолданылатын заманауи жобалау және есептеу әдістерін қолдану",
-    "ОН 10.3 Дипломдық жоба тақырыбы бойынша техникалық шарттар мен техникалық ұсыныстар әзірлеу",
-    "ОН 10.4 Дипломдық жоба тақырыбы бойынша бағдарламалық өнімді әзірлеу",
-    "Кәсіптік практика КМ3. ОН3.2, ОН3.3; КМ4. ОН4.3; КМ5. ОН5.2, ОН5.3; КМ7. ОН7.1, ОН7.2, ОН7.3; КМ8. ОН8.1, ОН8.2, ОН8.3; КМ9. ОН9.1, ОН9.2, ОН9.3.",
-    "Қорытынды аттестаттау :",
-    "Ф1 Факультативтік ағылшын тілі",
-    "Ф2 Факультативтік түрік тілі",
-    "Ф3 Факультативтік кәсіпкерлік қызмет негіздері",
-]
-
-_PAGE1_RU = [
-    "Казахский язык",
-    "Казахская литература",
-    "Русский язык и литература",
-    "Английский язык",
-    "История Казахстана",
-    "Математика",
-    "Информатика",
-    "Начальная военная и технологическая подготовка",
-    "Физическая культура",
-    "Физика",
-    "Химия",
-    "Биология",
-    "Всемирная история",
-]
-
-_PAGE2_RU = [
-    "БМ 01 Развитие и совершенств. физических качеств",
-    "БМ 02 Применение информационно-коммуникационных и цифровых технологий",
-    "БМ 03 Применение базовых знаний экономики и основ предпринимательства",
-    "БМ 04 Применение основ социальных наук для социализации и адаптации в обществе и трудовом коллективе",
-    "ПМ 01 Использование устных и письменных навыков общения в профессиональной сфере",
-    "РО 1.1 Освоение лексико-грамматического материала английского языка для профессионального общения",
-    "РО 1.2 Чтение и перевод профессионально ориентированных текстов",
-    "РО 1.3 Формирование ключевых речевых форм для выражения мысли",
-    "РО 1.4 Использование второго иностранного языка в деловом общении",
-    "ПМ 02 Применение математических и статистических расчетов в профессиональной деятельности",
-    "РО 2.1 Применение основных понятий и методов алгебры последовательностей",
-    "РО 2.2 Использование базовых знаний аналитической геометрии",
-    "РО 2.3 Освоение основ математического анализа",
-    "ПМ 03 Разработка web-ресурсов Front-end",
-    "РО 3.1 Создание шаблонов и плагинов для систем управления контентом",
-    "РО 3.2 Изменение дизайна веб-сайтов с использованием CSS и других внешних файлов",
-    "РО 3.3 Разработка, обновление и настройка веб-сайтов для пользователей",
-    "ПМ 04 Графический дизайн",
-    "РО 4.1 Проектирование промышленных изделий с учетом комплексного дизайна",
-    "РО 4.2 Создание макетов дизайна",
-    "РО 4.3 Разработка растровых и векторных изображений на компьютере",
-]
-
-_PAGE3_RU = [
-    "ПМ 05 Программирование и разработка алгоритмов",
-    "РО 5.1 Разработка клиент-серверных программных решений.",
-    "РО 5.2 Использование новейших сред разработки программного обеспечения и инструментов для модификации кодов",
-    "РО 5.3 Применение методов развития программных систем",
-    "ПМ 06 Стандарты управления ИТ, меры по охране окружающей среды и безопасности, управление проектом",
-    "РО 6.1 Интервью с пользователями, опросы, поиск и анализ документов, совместная разработка программ и отслеживание обработки требований.",
-    "РО 6.2 Разработка альтернатив для принятия решений, выбор наиболее подходящей альтернативы и принятие необходимого решения",
-    "РО 6.3 Реализация целей и задач программного обеспечения с учетом требований производства",
-    "РО 6.4 Разрабатывать ИТ-решения для компонентов программного обеспечения в производстве с учетом технических, экологических и мер безопасности.",
-    "ПМ 07 Разработка web-ресурсов Back-end",
-    "РО 7.1 Управление связью между серверными и клиентскими системами",
-    "РО 7.2 Использование технологий работы с базами данных",
-    "РО 7.3 Применение шаблонов проектирования программного обеспечения",
-    "ПМ 08 Визуальный дизайн UX/UI",
-    "РО 8.1 Разработка мультимедийных компонентов и веб-элементов",
-    "РО 8.2 Создание графических материалов для пользовательского интерфейса",
-    "РО 8.3 Создание визуального дизайна элементов графического пользовательского интерфейса.",
-    "ПМ 09 Разработка мобильных приложений",
-    "РО 9.1 Использование систем управления базами данных для хранения и обработки данных",
-    "РО 9.2 Создание уровневых устройств.",
-    "РО 9.3 Создание мобильных приложений на основе клиент-серверных решений",
-]
-
-_PAGE4_RU = [
-    "ПМ 10 Реализация проектной деятельности",
-    "РО 10.1 Развитие практических навыков проектирования",
-    "РО 10.2 Применение современных методов проектирования и расчетов",
-    "РО 10.3 Разработка технических условий и предложений по дипломному проекту",
-    "РО 10.4 Разработка программного продукта по теме дипломного проекта",
-    "Профессиональная практика ПМ3. РО3.2, РО3.3; ПМ4. РО4.3; ПМ5. РО5.2, РО5.3; ПМ7. РО7.1, РО7.2, РО7.3; ПМ8. РО8.1, РО8.2, РО8.3; ПМ9. РО9.1, РО9.2, РО9.3.",
-    "Итоговая аттестация:",
-    "Факультатив английский язык",
-    "Факультатив турецкий язык",
-    "Факультатив основы предпринимательской деятельности",
-]
-
-_PAGES = {
-    Language.KZ: [_PAGE1_KZ, _PAGE2_KZ, _PAGE3_KZ, _PAGE4_KZ],
-    Language.RU: [_PAGE1_RU, _PAGE2_RU, _PAGE3_RU, _PAGE4_RU],
-}
-
+from config.programs import PROGRAM_ACCOUNTING_PAGES, PROGRAM_IT_PAGES
 
 # ─────────────────────────────────────────────────────────────
-# COLUMN LAYOUT
+# HARDCODED SUBJECT LISTS ARE NOW IN config/programs.py
+# ─────────────────────────────────────────────────────────────
+
+_PAGES = {}
+# ─────────────────────────────────────────────────────────────
+
 # ─────────────────────────────────────────────────────────────
 
 COL_INDEX   = 0   # A — №
@@ -300,7 +140,11 @@ class DiplomaGenerator:
         grades_data = self._build_grades_data(student, subjects)
 
         # Get page subjects for this language
-        pages = _PAGES.get(self.language, _PAGES[Language.KZ])
+        pages = {}
+        if self.program == Program.ACCOUNTING:
+            pages = PROGRAM_ACCOUNTING_PAGES
+        elif self.program == Program.IT:
+            pages = PROGRAM_IT_PAGES
 
         # ═══ PAGE 1 (with header) ═══
         sheet_name_1 = self._sheet_name(1)
@@ -311,15 +155,15 @@ class DiplomaGenerator:
         header_end = self._write_header(ws1, styles, header_data)
         data_start = header_end + 6
         idx = 1
-        self._write_subjects(ws1, styles, data_start, pages[0], idx, grades_data)
+        self._write_subjects(ws1, styles, data_start, pages[1], idx, grades_data)
 
         # ═══ PAGES 2-4 (no header) ═══
-        idx = 1 + len(pages[0])
+        idx = 1 + len(pages[1])
         for page_num in range(2, len(pages) + 1):
             ws = workbook.add_worksheet(self._sheet_name(page_num))
             self._setup_sheet(ws)
-            self._write_subjects(ws, styles, 1, pages[page_num - 1], idx, grades_data)
-            idx += len(pages[page_num - 1])
+            self._write_subjects(ws, styles, 1, pages[page_num], idx, grades_data)
+            idx += len(pages[page_num])
 
         workbook.close()
 
@@ -347,11 +191,13 @@ class DiplomaGenerator:
 
     def _organize_subjects_into_pages(self, subjects: List[Subject]) -> Dict[int, list]:
         """Organize subjects into pages. Returns dict of page_num → subject_list."""
-        pages = _PAGES.get(self.language, _PAGES[Language.KZ])
-        result = {}
-        for i, page in enumerate(pages, 1):
-            result[i] = page
-        return result
+        pages = {}
+        if self.program == Program.ACCOUNTING:
+            pages = PROGRAM_ACCOUNTING_PAGES
+        elif self.program == Program.IT:
+            pages = PROGRAM_IT_PAGES
+            
+        return dict(pages)
 
     def _create_formats(self, workbook) -> dict:
         """Create all reusable cell formats."""
@@ -530,9 +376,9 @@ class DiplomaGenerator:
             for k, v in norm_map.items():
                 if "кәсіптікпрактика" in k or "профессиональнаяпрактика" in k:
                     return v
-        if "аттестаттау" in s_lower or "аттестация" in s_lower:
+        if "аттестаттау" in s_lower or "аттестациялау" in s_lower or "аттестация" in s_lower:
             for k, v in norm_map.items():
-                if "аттестаттау" in k or "аттестация" in k:
+                if "аттестаттау" in k or "аттестациялау" in k or "аттестация" in k:
                     return v
 
         return {}
@@ -543,11 +389,14 @@ class DiplomaGenerator:
         item_num = start_index
         norm_map = grades_data.get("__norm__", {})
 
-        for i, subject in enumerate(subjects):
-            is_header = is_module_header(subject)
+        for i, subject_obj in enumerate(subjects):
+            # Support both string and Subject dataclass
+            is_obj = isinstance(subject_obj, Subject)
+            subject_name = subject_obj.name_kz if is_obj and self.language == Language.KZ else (subject_obj.name_ru if is_obj else subject_obj)
+            is_header = subject_obj.is_module_header if is_obj else is_module_header(subject_name)
 
             # Row height
-            height = _calc_row_height(subject)
+            height = _calc_row_height(subject_name)
             if height is not None:
                 ws.set_row(current_row, height)
 
@@ -556,41 +405,59 @@ class DiplomaGenerator:
 
             # Subject name (bold for module headers)
             fmt = styles["subject_bold"] if is_header else styles["subject"]
-            ws.write(current_row, COL_SUBJECT, subject, fmt)
+            ws.write(current_row, COL_SUBJECT, subject_name, fmt)
 
             if is_header:
                 self._write_module_header_grades(
                     ws, styles, current_row, i, subjects, grades_data, norm_map
                 )
-            elif subject.startswith("Ф") and "актив" in subject.lower():
+            elif (is_obj and subject_obj.is_elective) or (not is_obj and subject_name.startswith("Ф") and "актив" in subject_name.lower()):
                 # Elective
-                self._write_elective_grades(ws, styles, current_row, subject, grades_data)
+                self._write_elective_grades(ws, styles, current_row, subject_name, grades_data, subject_obj if is_obj else None)
             else:
                 # Normal subject
-                self._write_normal_grades(ws, styles, current_row, subject, grades_data)
+                self._write_normal_grades(ws, styles, current_row, subject_name, grades_data, subject_obj if is_obj else None)
 
             item_num += 1
             current_row += 1
 
         return current_row
 
-    def _write_normal_grades(self, ws, styles, row, subject, grades_data):
+    def _write_normal_grades(self, ws, styles, row, subject, grades_data, subj_obj=None):
         """Write grade cells for a normal subject."""
-        grade = self._lookup_grade(subject, grades_data)
+        grade = self._lookup_grade(subject, grades_data) if grades_data else {}
 
-        ws.write(row, COL_HOURS, grade.get("hours", ""), styles["grade_center"])
-        ws.write(row, COL_CREDITS, grade.get("credits", ""), styles["grade_center"])
+        # Prefer grades if available, else static obj info
+        hours = grade.get("hours", "")
+        if not hours and subj_obj and subj_obj.hours:
+            hours = subj_obj.hours
+            
+        credits = grade.get("credits", "")
+        if not credits and subj_obj and subj_obj.credits:
+            credits = subj_obj.credits
+
+        ws.write(row, COL_HOURS, hours, styles["grade_center"])
+        ws.write(row, COL_CREDITS, credits, styles["grade_center"])
         ws.write(row, COL_POINTS, grade.get("points", ""), styles["grade_center"])
         ws.write(row, COL_LETTER, grade.get("letter", ""), styles["grade_center"])
         ws.write(row, COL_GPA, grade.get("gpa", ""), styles["grade_center"])
         ws.write(row, COL_TRAD, grade.get("traditional", ""), styles["grade_left"])
 
-    def _write_elective_grades(self, ws, styles, row, subject, grades_data):
+    def _write_elective_grades(self, ws, styles, row, subject, grades_data, subj_obj=None):
         """Write grade cells for an elective (Факультатив)."""
-        grade = self._lookup_grade(subject, grades_data)
+        grade = self._lookup_grade(subject, grades_data) if grades_data else {}
 
-        ws.write(row, COL_HOURS, grade.get("hours", ""), styles["grade_center"])
-        ws.write(row, COL_CREDITS, grade.get("credits", ""), styles["grade_center"])
+        # Prefer grades if available, else static obj info
+        hours = grade.get("hours", "")
+        if not hours and subj_obj and subj_obj.hours:
+            hours = subj_obj.hours
+            
+        credits = grade.get("credits", "")
+        if not credits and subj_obj and subj_obj.credits:
+            credits = subj_obj.credits
+
+        ws.write(row, COL_HOURS, hours, styles["grade_center"])
+        ws.write(row, COL_CREDITS, credits, styles["grade_center"])
         ws.write(row, COL_POINTS, grade.get("points", ""), styles["grade_center"])
         ws.write(row, COL_LETTER, grade.get("letter", ""), styles["grade_center"])
         ws.write(row, COL_GPA, grade.get("gpa", ""), styles["grade_center"])
@@ -606,8 +473,12 @@ class DiplomaGenerator:
         total_credits = 0.0
 
         for sub_idx in range(i + 1, len(subjects)):
-            sub_name = subjects[sub_idx]
-            if is_module_header(sub_name):
+            sub_obj = subjects[sub_idx]
+            is_obj = isinstance(sub_obj, Subject)
+            sub_name = sub_obj.name_kz if is_obj and self.language == Language.KZ else (sub_obj.name_ru if is_obj else sub_obj)
+            
+            is_header = sub_obj.is_module_header if is_obj else is_module_header(sub_name)
+            if is_header:
                 break
             g = self._lookup_grade(sub_name, grades_data)
             if g:
@@ -628,10 +499,22 @@ class DiplomaGenerator:
             ws.write(row, COL_CREDITS, _fmt(total_credits), styles["grade_center"])
         else:
             # Direct lookup for terminal modules (БМ, practice, attestation)
-            g = self._lookup_grade(subjects[i], grades_data)
-            if g:
-                ws.write(row, COL_HOURS, g.get("hours", ""), styles["grade_center"])
-                ws.write(row, COL_CREDITS, g.get("credits", ""), styles["grade_center"])
+            subj_obj = subjects[i]
+            is_obj = isinstance(subj_obj, Subject)
+            sub_name = subj_obj.name_kz if is_obj and self.language == Language.KZ else (subj_obj.name_ru if is_obj else subj_obj)
+            
+            g = self._lookup_grade(sub_name, grades_data)
+            
+            hours = g.get("hours", "") if g else ""
+            if not hours and is_obj and subj_obj.hours:
+                hours = subj_obj.hours
+                
+            credits = g.get("credits", "") if g else ""
+            if not credits and is_obj and subj_obj.credits:
+                credits = subj_obj.credits
+                
+            ws.write(row, COL_HOURS, hours, styles["grade_center"])
+            ws.write(row, COL_CREDITS, credits, styles["grade_center"])
 
         # Module headers NEVER show points/letter/GPA/traditional
 
