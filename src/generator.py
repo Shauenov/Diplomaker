@@ -69,7 +69,7 @@ class DiplomaGenerator:
         
         for sheet_idx, ws in enumerate(self.workbook.worksheets):
             start_row = 15 if sheet_idx == 0 else 1
-            col_shift = 1 if sheet_idx in (1, 3) else 0
+            col_shift = 0
             
             for row in range(start_row, ws.max_row + 1):
                 cell_b = ws.cell(row=row, column=2 + col_shift)
@@ -286,7 +286,7 @@ class DiplomaGenerator:
                 continue
 
             start_row = 15 if sheet_idx == 0 else 1
-            col_shift = 1 if sheet_idx in (1, 3) else 0
+            col_shift = 0
 
             entry_idx = 0  # pointer into entries
 
