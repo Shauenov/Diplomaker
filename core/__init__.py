@@ -27,6 +27,14 @@ from .exceptions import (
     GenerationError,
 )
 
+
+def __getattr__(name: str):
+    if name == "DiplomaGenerationService":
+        from .app_service import DiplomaGenerationService
+
+        return DiplomaGenerationService
+    raise AttributeError(f"module 'core' has no attribute '{name}'")
+
 __all__ = [
     # Models
     "Grade",
@@ -52,5 +60,8 @@ __all__ = [
     "ParseError",
     "ValidationError",
     "GenerationError",
+
+    # Services (lazy export via __getattr__)
+    "DiplomaGenerationService",
     
 ]

@@ -21,8 +21,7 @@ WORKSPACE_ROOT = Path(__file__).parent.parent
 # Source Excel file with student grades
 # Format: 2025-2026 диплом бағалары (ТОЛЫҚ) қызыл диплом жазылған соңғысы точно (1).xlsx
 SOURCE_FILE = (
-    r"c:\Users\user\OneDrive\Рабочий стол\template\2025-2026 диплом бағалары "
-    r"(ТОЛЫҚ) қызыл диплом жазылған соңғысы точно (1).xlsx"
+    WORKSPACE_ROOT / "2025-2026 диплом бағалары (ТОЛЫҚ) қызыл диплом жазылған соңғысы точно (5).xlsx"
 )
 
 # Output directory for generated diplomas

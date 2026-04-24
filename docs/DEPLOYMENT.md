@@ -74,6 +74,16 @@ pip install -r requirements.txt
 Successfully installed pandas-2.0.0 openpyxl-3.10.0 xlsxwriter-3.0.0 pyyaml-6.0
 ```
 
+### Step 3.1 (Optional): Build Portable Desktop EXE
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\packaging\build_portable.ps1
+```
+
+Artifacts:
+- `dist/DiplomaGenerator/` folder contains portable `DiplomaGenerator.exe` and bundled runtime files.
+- Distribute the full folder contents (not only the exe).
+
 ### Step 4: Verify Installation
 
 ```bash

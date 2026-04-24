@@ -21,3 +21,4 @@ sphinx-rtd-theme>=1.0.0
 # Development utilities
 ipython>=8.0.0
 ipdb>=0.13.0
+pyinstaller>=6.8.0

@@ -8,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+- `core/app_service.py`: new `DiplomaGenerationService` application service.
+  - `validate_inputs()` for source/group/lang/output validation.
+  - `preflight_checks()` for consistency checks, template existence checks, and sheet structure probe.
+  - `generate_batch()` with progress callback events for GUI/CLI integration.
+  - Centralized generator cleanup in `finally` to reduce file-lock risk.
+- `desktop_app.py`: GUI now creates a per-run log file in output directory (`generation_YYYY-MM-DD_HH-MM-SS.log`).
+- `desktop_app.py`: added `Stop` action for user-requested cancellation of in-progress generation.
+- `packaging/desktop_app.spec`: PyInstaller spec for portable GUI build with bundled templates/config modules.
+- `packaging/build_portable.ps1`: Windows build script for creating `dist/DiplomaGenerator/` portable bundle.
+
+### Changed
+- `main.py` now delegates generation flow to `DiplomaGenerationService`.
+  - CLI argument contract remains unchanged (`--source`, `--group`, `--lang`).
+  - Logging is now event-driven through service progress events.
+  - Preflight warnings/errors are shown before batch generation.
+
+### Internal
+- `core/__init__.py` exports `DiplomaGenerationService`.
+
 ### Planned for v2.0
 - Web interface for diploma management
 - PDF export functionality
@@ -23,6 +43,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Phase 3 Complete - Test Suite
 
 #### Added
+- Initial desktop GUI MVP entrypoint [desktop_app.py] using PySide6 with source/group/lang/output controls.
+- Validation and generation actions are wired to `DiplomaGenerationService` with real-time progress logs.
 - **Comprehensive test suite** with 126 tests across 5 modules
   - `tests/test_converters.py`: 47 tests for grade conversion engine (✅ 100% pass)
   - `tests/test_models.py`: 34 tests for domain models (✅ 100% pass)

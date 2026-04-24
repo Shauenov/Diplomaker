@@ -10,7 +10,7 @@ across multiple scripts. It uses thresholds from config.settings.
 
 from typing import Optional, Union
 from config.settings import GRADE_THRESHOLDS
-from core.models import Grade
+from core.models import Grade, Language
 from core.exceptions import ValidationError
 
 
@@ -136,7 +136,7 @@ def get_letter_grade(points: Optional[str]) -> str:
     return grade.letter
 
 
-def get_traditional_grade(points: Optional[str], language: Union[str, 'Language'] = "KZ") -> str:
+def get_traditional_grade(points: Optional[str], language: Union[str, Language] = "KZ") -> str:
     """
     Get traditional grade in specified language (shortcut).
     
@@ -148,7 +148,6 @@ def get_traditional_grade(points: Optional[str], language: Union[str, 'Language'
         Traditional grade description or empty string if no score
     """
     # Handle Language enum
-    from core.models import Language
     if isinstance(language, Language):
         language = language.value
     

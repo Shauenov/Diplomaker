@@ -1256,6 +1256,31 @@ python main.py --source "путь_к_excel.xlsx" --group 3D --lang KZ
 python batch_generate_it.py
 ```
 
+#### Способ 4: Desktop GUI (MVP)
+
+```bash
+# Запуск desktop-приложения (PySide6)
+python desktop_app.py
+```
+
+В GUI доступны:
+- выбор исходного Excel-файла,
+- выбор группы (`3F`/`3D`) и языка (`ALL`/`KZ`/`RU`),
+- проверка входных данных (`Validate`),
+- запуск генерации с логом прогресса (`Generate`),
+- остановка текущей генерации (`Stop`),
+- запись логов каждой сессии в файл `output/generation_YYYY-MM-DD_HH-MM-SS.log`.
+
+#### Способ 5: Portable EXE сборка (Windows)
+
+```powershell
+# Сборка переносимого desktop-приложения
+powershell -ExecutionPolicy Bypass -File .\packaging\build_portable.ps1
+```
+
+Результат сборки:
+- `dist/DiplomaGenerator/` — переносимая папка с `DiplomaGenerator.exe`.
+
 ### 20.3 Запуск тестов
 
 ```bash

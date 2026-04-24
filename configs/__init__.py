@@ -6,8 +6,8 @@ CONFIGS = {
     '3F': {
         'config': IT_CONFIG,
         'terms': IT_TERMS,
-        'template_kz': 'Diplom_F_KZ_Template (4).xlsx',
-        'template_ru': 'Diplom_F_RU_Template (4).xlsx',
+        'template_kz': 'Diplom_F_KZ_Template(4).xlsx',
+        'template_ru': 'Diplom_F_RU_Template(4).xlsx',
     },
     '3D': {
         'config': ACC_CONFIG,
